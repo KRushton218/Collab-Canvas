@@ -144,7 +144,11 @@ export const CanvasProvider = ({ children }) => {
     }
 
     try {
-      const newShapeId = await shapeService.createShape(shapeData);
+      // Include user ID in shape data
+      const newShapeId = await shapeService.createShape({
+        ...shapeData,
+        createdBy: currentUser.uid,
+      });
       return newShapeId;
     } catch (error) {
       console.error('Error adding shape:', error);
@@ -232,14 +236,6 @@ export const CanvasProvider = ({ children }) => {
     }
 
     try {
-      // Send final update to RTDB first (so other users see it before cleanup)
-      if (finalState) {
-        await realtimeShapes.updateEditingShape(id, finalState);
-      }
-      
-      // Wait a moment for the update to propagate
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
       // Get the final state - either from parameter or active edits
       const stateToCommit = finalState || activeEdits[id];
       
@@ -249,18 +245,34 @@ export const CanvasProvider = ({ children }) => {
           typeof stateToCommit.y === 'number' &&
           typeof stateToCommit.width === 'number' &&
           typeof stateToCommit.height === 'number') {
-        // Commit to Firestore
-        await shapeService.updateShape(id, {
+        
+        // Send final update to RTDB FIRST (forceUpdate=true bypasses throttle)
+        // This ensures other users see the final position immediately
+        await realtimeShapes.updateEditingShape(id, stateToCommit, true);
+        
+        // Commit to Firestore (persistent storage) - run in parallel
+        const firestorePromise = shapeService.updateShape(id, {
           x: stateToCommit.x,
           y: stateToCommit.y,
           width: stateToCommit.width,
           height: stateToCommit.height,
         });
+        
+        // Wait longer to ensure RTDB update is visible to other users
+        // AND give Firestore time to propagate before clearing RTDB
+        // This prevents the "gap" where other users see neither RTDB nor Firestore data
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        // Wait for Firestore to complete
+        await firestorePromise;
+        
+        // Additional small delay to ensure Firestore propagates to other clients
+        await new Promise(resolve => setTimeout(resolve, 100));
       } else {
         console.warn('Skipping Firestore commit - invalid or incomplete shape data', { id, stateToCommit });
       }
 
-      // Clear from RTDB
+      // Clear from RTDB and release lock (only after Firestore has propagated)
       await realtimeShapes.finishEditingShape(id, currentUser.uid);
     } catch (error) {
       console.error('Error finishing shape edit:', error);

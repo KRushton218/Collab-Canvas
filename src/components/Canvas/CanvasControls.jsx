@@ -18,47 +18,144 @@ const CanvasControls = () => {
       style={{
         position: 'fixed',
         bottom: '20px',
-        right: '20px',
+        left: '20px',
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: '8px',
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+        padding: '8px',
+        borderRadius: '12px',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+        border: '1px solid rgba(0, 0, 0, 0.08)',
         zIndex: 1000,
       }}
     >
-      <div
-        style={{
-          backgroundColor: 'white',
-          padding: '8px 12px',
-          borderRadius: '6px',
-          border: '1px solid #d1d5db',
-          textAlign: 'center',
-          fontSize: '12px',
-          lineHeight: 1.4,
-        }}
-      >
-        <div style={{ fontWeight: 600 }}>Zoom</div>
-        <div>{Math.round(scale * 100)}%</div>
-        <div style={{ color: '#6b7280', marginTop: '4px' }}>
-          {Math.round(MIN_ZOOM * 100)}% - {Math.round(MAX_ZOOM * 100)}%
-        </div>
-      </div>
-      <button
-        onClick={handleZoomIn}
-        className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-300 rounded shadow"
-      >
-        Zoom In
-      </button>
+      {/* Zoom Out Button */}
       <button
         onClick={handleZoomOut}
-        className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-300 rounded shadow"
+        disabled={scale <= MIN_ZOOM}
+        title="Zoom Out"
+        style={{
+          width: '36px',
+          height: '36px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: scale <= MIN_ZOOM ? '#f3f4f6' : 'transparent',
+          color: scale <= MIN_ZOOM ? '#9ca3af' : '#374151',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: scale <= MIN_ZOOM ? 'not-allowed' : 'pointer',
+          transition: 'all 0.2s ease',
+          fontSize: '18px',
+          fontWeight: 'bold',
+        }}
+        onMouseEnter={(e) => {
+          if (scale > MIN_ZOOM) {
+            e.currentTarget.style.backgroundColor = '#f3f4f6';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (scale > MIN_ZOOM) {
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }
+        }}
       >
-        Zoom Out
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35M8 11h6" />
+        </svg>
       </button>
+
+      {/* Zoom Display */}
+      <div
+        style={{
+          padding: '0 12px',
+          fontSize: '13px',
+          fontWeight: 600,
+          color: '#374151',
+          minWidth: '60px',
+          textAlign: 'center',
+          userSelect: 'none',
+        }}
+      >
+        {Math.round(scale * 100)}%
+      </div>
+
+      {/* Zoom In Button */}
+      <button
+        onClick={handleZoomIn}
+        disabled={scale >= MAX_ZOOM}
+        title="Zoom In"
+        style={{
+          width: '36px',
+          height: '36px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: scale >= MAX_ZOOM ? '#f3f4f6' : 'transparent',
+          color: scale >= MAX_ZOOM ? '#9ca3af' : '#374151',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: scale >= MAX_ZOOM ? 'not-allowed' : 'pointer',
+          transition: 'all 0.2s ease',
+          fontSize: '18px',
+          fontWeight: 'bold',
+        }}
+        onMouseEnter={(e) => {
+          if (scale < MAX_ZOOM) {
+            e.currentTarget.style.backgroundColor = '#f3f4f6';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (scale < MAX_ZOOM) {
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" />
+        </svg>
+      </button>
+
+      {/* Divider */}
+      <div style={{ 
+        width: '1px', 
+        height: '24px', 
+        backgroundColor: 'rgba(0, 0, 0, 0.08)', 
+        margin: '0 4px' 
+      }} />
+
+      {/* Reset View Button */}
       <button
         onClick={resetView}
-        className="bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-300 rounded shadow"
+        title="Reset View (Fit to Center)"
+        style={{
+          width: '36px',
+          height: '36px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'transparent',
+          color: '#374151',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = '#f3f4f6';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent';
+        }}
       >
-        Reset View
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 12h18M3 6h18M3 18h18" />
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
+        </svg>
       </button>
     </div>
   );

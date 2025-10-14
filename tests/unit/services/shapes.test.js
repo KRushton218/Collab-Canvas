@@ -15,10 +15,12 @@ vi.mock('../../../src/services/firebase', () => ({
 }));
 
 vi.mock('firebase/firestore', () => ({
+  collection: vi.fn(() => 'mockCollection'),
   doc: vi.fn(),
   getDoc: vi.fn(),
   setDoc: vi.fn(),
   updateDoc: vi.fn(),
+  deleteDoc: vi.fn(),
   onSnapshot: vi.fn(),
 }));
 

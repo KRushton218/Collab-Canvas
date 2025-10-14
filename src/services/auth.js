@@ -81,17 +81,26 @@ export const signIn = async (email, password) => {
 /**
  * Sign in with Google
  * Uses Google display name with truncation if needed
+ * Preserves photoURL from Google profile
  * @returns {Promise<UserCredential>}
  */
 export const signInWithGoogle = async () => {
   try {
     const provider = new GoogleAuthProvider();
+    // Request profile and email scopes
+    provider.addScope('profile');
+    provider.addScope('email');
+    
     const userCredential = await signInWithPopup(auth, provider);
     
-    // Google provides display name automatically, but truncate if needed
+    // Google provides display name and photoURL automatically
+    // Truncate name if needed, but preserve photoURL
     if (userCredential.user.displayName && userCredential.user.displayName.length > 20) {
       const truncatedName = truncateDisplayName(userCredential.user.displayName);
-      await updateProfile(userCredential.user, { displayName: truncatedName });
+      await updateProfile(userCredential.user, { 
+        displayName: truncatedName,
+        photoURL: userCredential.user.photoURL // Preserve the photoURL
+      });
     }
     
     return userCredential;

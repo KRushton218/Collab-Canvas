@@ -80,36 +80,39 @@ export const startEditingShape = async (shapeId, userId, initialState) => {
 
 // Throttle map to prevent excessive updates
 const updateThrottleMap = new Map();
-const THROTTLE_DELAY = 50; // 50ms = ~20 updates per second max
+const THROTTLE_DELAY = 33; // 33ms = ~30 updates per second (smoother than 20 FPS)
 
 /**
  * Update shape position/size during active editing
  * @param {string} shapeId - Shape ID
  * @param {Object} updates - Properties to update (x, y, width, height)
+ * @param {boolean} forceUpdate - If true, bypass throttle (for final updates)
  * @returns {Promise<void>}
  */
-export const updateEditingShape = async (shapeId, updates) => {
+export const updateEditingShape = async (shapeId, updates, forceUpdate = false) => {
   if (!shapeId) {
     throw new Error('Shape ID is required');
   }
 
   const editRef = activeEditsRef(shapeId);
 
-  // Throttle updates to prevent excessive RTDB writes
-  const now = Date.now();
-  const lastUpdate = updateThrottleMap.get(shapeId) || 0;
-  
-  if (now - lastUpdate < THROTTLE_DELAY) {
-    // Too soon, skip this update
-    return;
+  // Throttle updates to prevent excessive RTDB writes (unless forced)
+  if (!forceUpdate) {
+    const now = Date.now();
+    const lastUpdate = updateThrottleMap.get(shapeId) || 0;
+    
+    if (now - lastUpdate < THROTTLE_DELAY) {
+      // Too soon, skip this update
+      return;
+    }
+    
+    updateThrottleMap.set(shapeId, now);
   }
-  
-  updateThrottleMap.set(shapeId, now);
 
   try {
     await update(editRef, {
       ...updates,
-      lastUpdate: now,
+      lastUpdate: Date.now(),
     });
   } catch (error) {
     console.error('Error updating editing shape:', error);

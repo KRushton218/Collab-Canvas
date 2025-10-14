@@ -45,10 +45,37 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   const [editingShapes, setEditingShapes] = useState(new Set());
   const editingShapesRef = useRef(new Set());
   
+  // Toast notification state
+  const [toast, setToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
+  
   // Keep ref in sync with state
   useEffect(() => {
     editingShapesRef.current = editingShapes;
   }, [editingShapes]);
+  
+  // Show toast notification
+  const showToast = (message, duration = 2000) => {
+    // Clear existing timeout
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    
+    setToast(message);
+    
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, duration);
+  };
+  
+  // Cleanup toast timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
   
   // Cursor tracking and online users for lock colors
   const { cursors, updateMyCursor } = useCursors(currentUser?.uid, stageRef);
@@ -66,6 +93,20 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     }
     
     return lockOwner ? lockOwner[1].color : '#ff6b6b'; // Fallback to red
+  };
+  
+  // Get lock owner's display name
+  const getLockOwnerName = (shape) => {
+    if (!shape.lockedBy) return null;
+    
+    // Find the user in cursors (which includes all online users)
+    const lockOwner = Object.entries(cursors).find(([userId]) => userId === shape.lockedBy);
+    
+    if (lockOwner) {
+      return lockOwner[1].displayName || 'Another user';
+    }
+    
+    return 'Another user';
   };
 
   const isEditableElement = (element) => {
@@ -370,12 +411,22 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
                   opacity={lockedByOther ? 0.6 : 1}
                   draggable={!isPanning && !lockedByOther}
                   onClick={() => {
-                    if (!isPanning && !lockedByOther) {
+                    if (isPanning) return;
+                    
+                    if (lockedByOther) {
+                      const ownerName = getLockOwnerName(shape);
+                      showToast(`🔒 This shape is being edited by ${ownerName}`);
+                    } else {
                       setSelectedId(shape.id);
                     }
                   }}
                   onTap={() => {
-                    if (!isPanning && !lockedByOther) {
+                    if (isPanning) return;
+                    
+                    if (lockedByOther) {
+                      const ownerName = getLockOwnerName(shape);
+                      showToast(`🔒 This shape is being edited by ${ownerName}`);
+                    } else {
                       setSelectedId(shape.id);
                     }
                   }}
@@ -592,6 +643,42 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       <CanvasControls />
       <CanvasToolbar />
       <CanvasHelpOverlay />
+      
+      {/* Toast notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '80px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          color: 'white',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: '500',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+          zIndex: 10000,
+          pointerEvents: 'none',
+          animation: 'slideUp 0.3s ease-out',
+        }}>
+          {toast}
+        </div>
+      )}
+      
+      {/* Toast animation */}
+      <style>{`
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

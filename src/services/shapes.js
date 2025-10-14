@@ -1,28 +1,74 @@
-import { doc, getDoc, updateDoc, onSnapshot, setDoc } from 'firebase/firestore';
+/**
+ * Shapes Service - O(1) Performance
+ * 
+ * Uses 1 document per shape for true O(1) operations
+ * No more reading/writing entire shape arrays!
+ * 
+ * Schema: /shapes/{shapeId}
+ * {
+ *   id: string,
+ *   canvasId: string,
+ *   x: number,
+ *   y: number,
+ *   width: number,
+ *   height: number,
+ *   fill: string,
+ *   type: string,
+ *   createdAt: ISO timestamp,
+ *   updatedAt: ISO timestamp,
+ *   createdBy: userId
+ * }
+ */
+
+import { 
+  doc, 
+  getDoc, 
+  setDoc,
+  updateDoc, 
+  deleteDoc,
+  collection,
+  query,
+  where,
+  onSnapshot 
+} from 'firebase/firestore';
 import { CANVAS_ID } from '../utils/constants';
 import { db } from './firebase';
 
-// Canvas document reference - single shared canvas for MVP
-const canvasDocRef = doc(db, 'canvas', CANVAS_ID);
+// Collection reference
+const shapesCollection = collection(db, 'shapes');
 
 /**
- * Load shapes from Firestore
+ * Load all shapes for the current canvas
  * @returns {Promise<Array>} Array of shapes
  */
 export const loadShapes = async () => {
   try {
-    const docSnap = await getDoc(canvasDocRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return data.shapes || [];
-    } else {
-      // Initialize empty canvas if it doesn't exist
-      await setDoc(canvasDocRef, {
-        shapes: [],
-        lastModified: new Date().toISOString(),
-      });
-      return [];
-    }
+    // Query all shapes for this canvas
+    const q = query(shapesCollection, where('canvasId', '==', CANVAS_ID));
+    
+    return new Promise((resolve, reject) => {
+      // Use onSnapshot with onlyOnce pattern for initial load
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const shapes = snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Ensure fill is always a valid string (fix for old data or missing fill)
+            return {
+              ...data,
+              fill: (typeof data.fill === 'string' && data.fill) ? data.fill : '#cccccc'
+            };
+          });
+          unsubscribe(); // Clean up immediately
+          resolve(shapes);
+        },
+        (error) => {
+          console.error('Error loading shapes:', error);
+          unsubscribe();
+          reject(error);
+        }
+      );
+    });
   } catch (error) {
     console.error('Error loading shapes:', error);
     throw error;
@@ -30,53 +76,58 @@ export const loadShapes = async () => {
 };
 
 /**
- * Subscribe to real-time shape updates
+ * Subscribe to real-time shape updates for the current canvas
  * @param {Function} callback - Called with updated shapes array
  * @returns {Function} Unsubscribe function
  */
 export const subscribeToShapes = (callback) => {
+  const q = query(shapesCollection, where('canvasId', '==', CANVAS_ID));
+  
   return onSnapshot(
-    canvasDocRef,
-    (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        callback(data.shapes || []);
-      } else {
-        callback([]);
-      }
+    q,
+    (snapshot) => {
+      const shapes = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Ensure fill is always a valid string (fix for old data or missing fill)
+        return {
+          ...data,
+          fill: (typeof data.fill === 'string' && data.fill) ? data.fill : '#cccccc'
+        };
+      });
+      callback(shapes);
     },
     (error) => {
       console.error('Error subscribing to shapes:', error);
+      callback([]);
     }
   );
 };
 
 /**
- * Create a new shape in Firestore
- * @param {Object} shapeData - Shape properties (x, y, width, height, fill, type)
+ * Create a new shape
+ * O(1) operation - only creates one document!
+ * @param {Object} shapeData - Shape properties (x, y, width, height, fill, type, createdBy)
  * @returns {Promise<string>} The new shape ID
  */
 export const createShape = async (shapeData) => {
   try {
     const newShape = {
       id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      canvasId: CANVAS_ID,
       type: shapeData.type || 'rectangle',
       x: shapeData.x,
       y: shapeData.y,
       width: shapeData.width,
       height: shapeData.height,
-      fill: shapeData.fill,
+      fill: shapeData.fill || '#cccccc', // Ensure fill is always a string
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: shapeData.createdBy || null,
     };
 
-    // Get current shapes and add the new one
-    const docSnap = await getDoc(canvasDocRef);
-    const currentShapes = docSnap.exists() ? (docSnap.data().shapes || []) : [];
-
-    await updateDoc(canvasDocRef, {
-      shapes: [...currentShapes, newShape],
-      lastModified: new Date().toISOString(),
-    });
+    // Create document with shape ID as document ID
+    const shapeRef = doc(db, 'shapes', newShape.id);
+    await setDoc(shapeRef, newShape);
 
     return newShape.id;
   } catch (error) {
@@ -86,26 +137,26 @@ export const createShape = async (shapeData) => {
 };
 
 /**
- * Update an existing shape in Firestore
+ * Update an existing shape
+ * O(1) operation - only touches one document!
  * @param {string} shapeId - Shape ID to update
  * @param {Object} updates - Properties to update
  * @returns {Promise<void>}
  */
 export const updateShape = async (shapeId, updates) => {
   try {
-    const docSnap = await getDoc(canvasDocRef);
+    const shapeRef = doc(db, 'shapes', shapeId);
+    
+    // Check if document exists first (optional, for better error messages)
+    const docSnap = await getDoc(shapeRef);
     if (!docSnap.exists()) {
-      throw new Error('Canvas document does not exist');
+      throw new Error(`Shape ${shapeId} does not exist`);
     }
 
-    const currentShapes = docSnap.data().shapes || [];
-    const updatedShapes = currentShapes.map((shape) =>
-      shape.id === shapeId ? { ...shape, ...updates } : shape
-    );
-
-    await updateDoc(canvasDocRef, {
-      shapes: updatedShapes,
-      lastModified: new Date().toISOString(),
+    // Update only this shape - O(1) operation!
+    await updateDoc(shapeRef, {
+      ...updates,
+      updatedAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Error updating shape:', error);
@@ -114,26 +165,37 @@ export const updateShape = async (shapeId, updates) => {
 };
 
 /**
- * Delete a shape from Firestore
+ * Delete a shape
+ * O(1) operation - only touches one document!
  * @param {string} shapeId - Shape ID to delete
  * @returns {Promise<void>}
  */
 export const deleteShape = async (shapeId) => {
   try {
-    const docSnap = await getDoc(canvasDocRef);
-    if (!docSnap.exists()) {
-      throw new Error('Canvas document does not exist');
-    }
-
-    const currentShapes = docSnap.data().shapes || [];
-    const filteredShapes = currentShapes.filter((shape) => shape.id !== shapeId);
-
-    await updateDoc(canvasDocRef, {
-      shapes: filteredShapes,
-      lastModified: new Date().toISOString(),
-    });
+    const shapeRef = doc(db, 'shapes', shapeId);
+    await deleteDoc(shapeRef);
   } catch (error) {
     console.error('Error deleting shape:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a single shape by ID
+ * @param {string} shapeId - Shape ID
+ * @returns {Promise<Object|null>} Shape data or null if not found
+ */
+export const getShape = async (shapeId) => {
+  try {
+    const shapeRef = doc(db, 'shapes', shapeId);
+    const docSnap = await getDoc(shapeRef);
+    
+    if (docSnap.exists()) {
+      return docSnap.data();
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting shape:', error);
     throw error;
   }
 };
@@ -142,8 +204,6 @@ export const deleteShape = async (shapeId) => {
  * DEPRECATED - Lock management has been moved to realtimeShapes.js
  * Locks are now managed in RTDB for real-time performance
  * Use startEditingShape/finishEditingShape from realtimeShapes.js instead
- * 
- * These functions are kept for backward compatibility but will be removed
  */
 
 /**
