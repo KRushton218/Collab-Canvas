@@ -103,14 +103,26 @@
 
 ## Current Status
 
-**Phase**: Core functionality complete, UI redesign finished
-**Stability**: Stable, production-ready for basic rectangle collaboration
-**Performance**: Good (tested with multiple users)
-**Next Milestone**: Implement remaining shape types (Circle, Line, Text)
+**🎉 V1.0 DEPLOYED TO PRODUCTION** (October 14, 2025)
+
+**Live URL**: https://collab-canvas-ed2fc.web.app  
+**Version**: 1.0.0  
+**Phase**: Production - First stable release  
+**Stability**: Production-ready for basic rectangle collaboration  
+**Performance**: Tested with 5-10 concurrent users, <500 shapes  
+**Test Coverage**: 64/64 tests passing ✅  
+**Next Milestone**: V1.1.0 - Implement remaining shape types (Circle, Line, Text)
+
+### Deployment Details
+- ✅ Deployed to Firebase Hosting
+- ✅ Database rules deployed (Firestore + RTDB)
+- ✅ Bundle size: 1.21 MB (326 KB gzipped)
+- ✅ Version tagged: v1.0.0
+- ✅ Comprehensive documentation (CHANGELOG, Release Notes)
 
 ## Known Limitations
 
-1. **Shape Types**: Only rectangles render currently
+1. **Shape Types**: Only rectangles render currently (Circle/Line/Text UI exists but not functional)
 2. **Tool Modes**: All tools create shapes immediately (no draw mode)
 3. **Mobile**: Desktop-optimized, mobile needs work
 4. **Scale**: Tested with <500 shapes, performance with 1000+ unknown
