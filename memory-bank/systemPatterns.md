@@ -53,6 +53,7 @@ App.jsx
     │   ├── Shapes layer (with locks/transforms)
     │   └── Cursors layer
     ├── CanvasToolbar (left side)
+    ├── StylePanel (right side)
     ├── CanvasControls (bottom-left)
     └── CanvasHelpOverlay
 ```
@@ -79,4 +80,8 @@ All Firebase operations isolated in service files:
 - Konva handles local drag immediately (no network lag)
 - RTDB sends throttled updates to other users
 - Firestore commit happens on drag end
+
+### Interaction Rules
+- Space + drag always pans; while held, shapes are non-interactive (no drag/transform)
+- Zoom requires Ctrl/⌘ + scroll to avoid accidental zooming
 

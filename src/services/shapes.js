@@ -111,7 +111,7 @@ export const subscribeToShapes = (callback) => {
  */
 export const createShape = async (shapeData) => {
   try {
-    const newShape = {
+    const baseShape = {
       id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       canvasId: CANVAS_ID,
       type: shapeData.type || 'rectangle',
@@ -124,6 +124,20 @@ export const createShape = async (shapeData) => {
       updatedAt: new Date().toISOString(),
       createdBy: shapeData.createdBy || null,
     };
+
+    // Allow extended optional fields for other object types
+    const extended = {};
+    if (shapeData.rotation !== undefined) extended.rotation = shapeData.rotation;
+    if (shapeData.stroke !== undefined) extended.stroke = shapeData.stroke;
+    if (shapeData.strokeWidth !== undefined) extended.strokeWidth = shapeData.strokeWidth;
+    if (shapeData.cornerRadius !== undefined) extended.cornerRadius = shapeData.cornerRadius;
+    if (shapeData.points !== undefined) extended.points = shapeData.points;
+    if (shapeData.text !== undefined) extended.text = shapeData.text;
+    if (shapeData.fontSize !== undefined) extended.fontSize = shapeData.fontSize;
+    if (shapeData.fontFamily !== undefined) extended.fontFamily = shapeData.fontFamily;
+    if (shapeData.align !== undefined) extended.align = shapeData.align;
+
+    const newShape = { ...baseShape, ...extended };
 
     // Create document with shape ID as document ID
     const shapeRef = doc(db, 'shapes', newShape.id);

@@ -26,6 +26,10 @@ export const CanvasProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const stageRef = useRef(null);
 
+  // Tool state (used by toolbar and canvas interactions)
+  const [activeTool, setActiveTool] = useState('select');
+  const [currentFill, setCurrentFill] = useState('#6366f1');
+
   // Subscribe to Firestore shapes (persistent data)
   useEffect(() => {
     if (!currentUser) {
@@ -350,6 +354,11 @@ export const CanvasProvider = ({ children }) => {
     loading,
     currentUser,
     locks, // Expose locks for checking lock state
+    // Tool state
+    activeTool,
+    setActiveTool,
+    currentFill,
+    setCurrentFill,
   };
 
   return (

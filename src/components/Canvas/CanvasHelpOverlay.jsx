@@ -21,10 +21,11 @@ const CanvasHelpOverlay = () => {
         Quick Tips
       </div>
       <ul style={{ margin: 0, paddingLeft: '16px', listStyleType: 'disc' }}>
-        <li>Scroll to zoom in and out.</li>
-        <li>Hold the spacebar and drag to pan the canvas.</li>
-        <li>Click a shape to select it, then drag its handles to resize.</li>
-        <li>Press Delete or Backspace to remove the selected shape.</li>
+        <li>Ctrl/⌘ + scroll to zoom. Space + drag to pan.</li>
+        <li>Tools persist: V Select, R Rectangle, C Circle, L Line, T Text, Esc cancel.</li>
+        <li>Click to place default size; click & drag to size as you draw.</li>
+        <li>Select a shape to rotate/resize with handles; edit style on the right.</li>
+        <li>Press Delete/Backspace to remove selected.</li>
       </ul>
     </div>
   );

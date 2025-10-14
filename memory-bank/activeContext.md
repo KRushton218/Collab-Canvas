@@ -1,13 +1,42 @@
 # Active Context
 
 ## Current Work Focus
-**🎉 V1.0 PRODUCTION DEPLOYMENT COMPLETE** (October 14, 2025)
+**📚 Documentation Overhaul & Bug Discovery** (October 14, 2025)
 
+**Recent Completion**: V1.0 Production Deployment  
 **Live App**: https://collab-canvas-ed2fc.web.app  
-**Version**: 1.0.0  
-**Status**: First production release deployed and stable
+**Current Phase**: Documentation cleanup and planning V1.1.0
 
 ## Recent Changes (Latest Session)
+
+### Documentation Restructure ✅ (October 14, 2025)
+Completed major documentation update to transition from task-based to memory-bank workflow:
+
+**New Documents Created**:
+- ✅ `current-todos.md` - Active task list for ongoing work
+- ✅ `testing-strategy.md` - Comprehensive testing approach with 45+ user stories
+- ✅ `DOCUMENTATION_UPDATE_SUMMARY.md` - Meta-document explaining changes
+
+**Documents Updated**:
+- ✅ `PRD.md` - Added completion status, documented O(1) architecture evolution with rationale
+- ✅ `tasks.md` - Marked completed tasks (PRs 1-7), added final summary, marked as historical
+
+**Key Documentation Decisions**:
+1. **Architecture Evolution Documented**: Explained migration from array-based to O(1) per-shape with technical rationale
+2. **Beyond-MVP Features Tracked**: 6 major enhancements documented (color picker, resize handles, visual locks, modern toolbar, profile photos, zoom controls)
+3. **Testing Philosophy Formalized**: Manual testing approach with comprehensive user story suite providing full functional coverage
+4. **Memory Bank as Primary Source**: PRD and tasks.md marked as historical, memory-bank/ now primary documentation
+
+### Bug Discovery 🐛 (October 14, 2025)
+**Lock Border Persistence Issue**:
+- **Symptom**: When dragging multiple shapes in sequence, lock borders persist on all shapes in the chain
+- **Expected**: Lock border should only appear on currently locked shape
+- **Impact**: Visual clutter, confusing lock state indication
+- **Priority**: Medium (visual bug, doesn't affect functionality)
+- **Status**: Newly discovered, needs investigation
+- **Location**: `Canvas.jsx` lock border rendering logic
+
+## Recent Changes (Previous Session)
 
 ### V1.0 Deployment ✅ (October 14, 2025)
 Successfully deployed first production release:
@@ -104,8 +133,11 @@ Planned features for next release:
 ## Active Decisions
 
 ### Tool Interaction Pattern
-- **Current**: Click tool → shape appears at center → return to select mode
-- **Consider**: Click tool → enter draw mode → click/drag to create → stay in tool mode
+- **Current**: Click tool → enter draw mode → click to place default size or click/drag to size → tool mode persists until changed (V/R/C/L/T, Esc)
+
+### Pan & Zoom Interaction
+- **Pan (Space Override)**: Holding Space enters pan mode and overrides shape interactions (no drag/transform on shapes while held)
+- **Zoom**: Ctrl/⌘ + scroll (wheel zoom gated to modifier)
 
 ### Presence List Location
 - **Current**: Dropdown from navbar (toggleable)
@@ -116,7 +148,14 @@ Planned features for next release:
 - **Works well**: Prevents conflicts without manual locking
 
 ## Known Issues
-None currently blocking. V1.0 is stable and production-ready.
+
+### Active Bugs
+1. **Lock Border Persistence** (Medium Priority) 🐛
+   - Moving shapes in rapid sequence leaves lock borders on previous shapes
+   - Expected: Only currently locked shape should show lock border
+   - Location: Canvas.jsx - editingShapes state management
+   - Impact: Visual confusion, doesn't affect functionality
+   - Discovered: October 14, 2025
 
 ### Known Limitations (V1.0)
 - Only rectangles render (Circle/Line/Text buttons exist but don't work)
@@ -128,7 +167,27 @@ None currently blocking. V1.0 is stable and production-ready.
 ## Documentation Updates
 - ✅ CHANGELOG.md created with semantic versioning guide
 - ✅ RELEASE_NOTES_V1.0.md created with feature overview
-- ✅ PRD.md updated with completion status
-- ✅ Memory bank updated for V1.0 deployment
+- ✅ PRD.md updated with completion status and marked as historical
+- ✅ tasks.md updated with completion tracking and marked as historical
+- ✅ current-todos.md created as active task list
+- ✅ testing-strategy.md created with 45+ user stories
+- ✅ Memory bank as primary documentation source
 - ✅ All technical documentation current
+
+## Documentation Structure (As of October 14, 2025)
+
+**Primary Documentation** (Active Use):
+- `memory-bank/` - Source of truth for project context
+  - `projectbrief.md` - Core requirements
+  - `productContext.md` - User experience goals
+  - `systemPatterns.md` - Architecture & patterns
+  - `techContext.md` - Tech stack & setup
+  - `activeContext.md` - Current work focus (this file)
+  - `progress.md` - What works, what's left
+- `current-todos.md` - Active prioritized task list
+- `testing-strategy.md` - Testing approach & user story suite
+
+**Historical Reference** (Preserved, Not Active):
+- `PRD.md` - Original MVP product requirements
+- `tasks.md` - Original MVP task tracking (PRs 1-9)
 

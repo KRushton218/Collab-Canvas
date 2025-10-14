@@ -1,9 +1,11 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Transformer, Group, Path } from 'react-konva';
+import { Stage, Layer, Rect, Transformer, Group, Path, Line, Circle, Text as KonvaText } from 'react-konva';
 import { CanvasContext } from '../../contexts/CanvasContext';
 import { isShapeLockedByOther } from '../../services/shapes';
 import { useCursors } from '../../hooks/useCursors';
 import { Cursor } from '../Collaboration/Cursor';
+import ShapeNode from './ShapeNode';
+import { RectangleObject, CircleObject, LineObject, TextObject } from '../../models/CanvasObject';
 import { 
   CANVAS_WIDTH, 
   CANVAS_HEIGHT, 
@@ -16,6 +18,7 @@ import {
 import CanvasControls from './CanvasControls';
 import CanvasToolbar from './CanvasToolbar';
 import CanvasHelpOverlay from './CanvasHelpOverlay';
+import StylePanel from './StylePanel';
 
 const Canvas = ({ currentUserColor = '#000000' }) => {
   const {
@@ -28,6 +31,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     position,
     setPosition,
     stageRef,
+    addShape,
     updateShape,
     updateShapeTemporary,
     startEditingShape,
@@ -36,9 +40,15 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     currentUser,
     loading,
     locks,
+    activeTool,
+    setActiveTool,
+    currentFill,
   } = useContext(CanvasContext);
   const transformerRef = useRef(null);
   const [isPanning, setIsPanning] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [creationStart, setCreationStart] = useState(null); // {x,y}
+  const [creationDraft, setCreationDraft] = useState(null); // { type, x,y,width,height,points, fill }
   
   // Track which shapes are being actively edited by this user
   // This ensures the lock border persists throughout the drag/transform
@@ -123,6 +133,9 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   const handleWheel = (e) => {
     e.evt.preventDefault();
     
+    // Gate zoom to ctrl/meta + scroll
+    const isZoomGesture = e.evt.ctrlKey || e.evt.metaKey;
+    if (!isZoomGesture) return;
     const stage = stageRef.current;
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
@@ -155,7 +168,10 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     if (isPanning) {
       return;
     }
-
+    // If in draw mode, clicking stage should not deselect or create here (handled in mousedown/up)
+    if (activeTool && activeTool !== 'select') {
+      return;
+    }
     // Deselect if clicking on stage background
     if (e.target === e.target.getStage()) {
       deselectShape();
@@ -239,6 +255,8 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     } else {
       transformer.nodes([]);
       transformer.getLayer()?.batchDraw();
+      // When deselecting, ensure any local editing borders are cleared
+      setEditingShapes(new Set());
     }
   }, [selectedId, shapes, stageRef]);
 
@@ -248,6 +266,22 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       if (e.code === 'Space' && !isEditableElement(e.target)) {
         e.preventDefault();
         setIsPanning(true);
+      }
+      if (!isEditableElement(e.target)) {
+        if (e.key === 'Escape') {
+          setIsPanning(false);
+          // return to select tool
+          if (typeof setActiveTool === 'function') {
+            setActiveTool('select');
+          }
+        }
+        // Tool shortcuts
+        const key = e.key.toLowerCase();
+        if (key === 'v') setActiveTool?.('select');
+        if (key === 'r') setActiveTool?.('rectangle');
+        if (key === 'c') setActiveTool?.('circle');
+        if (key === 'l') setActiveTool?.('line');
+        if (key === 't') setActiveTool?.('text');
       }
     };
 
@@ -320,8 +354,114 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       transform.invert();
       const canvasPos = transform.point(pointerPosition);
       
+      // Update live creation draft while dragging
+      if (isCreating && creationStart && activeTool && activeTool !== 'select') {
+        const startX = Math.max(0, Math.min(creationStart.x, CANVAS_WIDTH));
+        const startY = Math.max(0, Math.min(creationStart.y, CANVAS_HEIGHT));
+        const currentX = Math.max(0, Math.min(canvasPos.x, CANVAS_WIDTH));
+        const currentY = Math.max(0, Math.min(canvasPos.y, CANVAS_HEIGHT));
+
+        const x = Math.min(startX, currentX);
+        const y = Math.min(startY, currentY);
+        const width = Math.abs(currentX - startX);
+        const height = Math.abs(currentY - startY);
+
+        if (activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'text') {
+          setCreationDraft({ type: activeTool, x, y, width, height, fill: currentFill });
+        } else if (activeTool === 'line') {
+          setCreationDraft({ type: activeTool, points: [startX, startY, currentX, currentY], stroke: currentUserColor, strokeWidth: 2 });
+        }
+      }
+
       // Update cursor position in Firebase
       updateMyCursor(canvasPos.x, canvasPos.y);
+    }
+  };
+
+  // Begin creation on mouse down when in tool mode
+  const handleMouseDown = (e) => {
+    if (!stageRef.current) return;
+    if (isPanning) return;
+    if (!activeTool || activeTool === 'select') return;
+    // Only start creation if clicking on empty canvas (not on an existing node)
+    if (e.target !== e.target.getStage()) return;
+
+    const stage = stageRef.current;
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
+    const transform = stage.getAbsoluteTransform().copy();
+    transform.invert();
+    const canvasPos = transform.point(pointerPosition);
+
+    setIsCreating(true);
+    setCreationStart({ x: canvasPos.x, y: canvasPos.y });
+    setCreationDraft(null);
+  };
+
+  // Commit creation on mouse up: if no drag, create default size at click; else use draft
+  const handleMouseUp = async (e) => {
+    if (!isCreating) return;
+    setIsCreating(false);
+
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
+    const transform = stage.getAbsoluteTransform().copy();
+    transform.invert();
+    const canvasPos = transform.point(pointerPosition);
+
+    const start = creationStart;
+    setCreationStart(null);
+
+    const dx = Math.abs(canvasPos.x - start.x);
+    const dy = Math.abs(canvasPos.y - start.y);
+    const dragged = dx > 2 || dy > 2; // small threshold
+
+    try {
+      if (!dragged) {
+        // Click: default size
+        const size = 100;
+        const x = Math.max(0, Math.min(start.x - size / 2, CANVAS_WIDTH - size));
+        const y = Math.max(0, Math.min(start.y - size / 2, CANVAS_HEIGHT - size));
+
+        if (activeTool === 'rectangle') {
+          const obj = new RectangleObject({ x, y, width: size, height: size, fill: currentFill });
+          await addShape(obj.toRecord());
+        } else if (activeTool === 'circle') {
+          const obj = new CircleObject({ x, y, width: size, height: size, fill: currentFill });
+          await addShape(obj.toRecord());
+        } else if (activeTool === 'line') {
+          const obj = new LineObject({ points: [start.x, start.y, start.x + size, start.y + size] });
+          await addShape(obj.toRecord());
+        } else if (activeTool === 'text') {
+          const obj = new TextObject({ x, y, width: 160, height: 40, fill: '#111827', text: 'Text' });
+          await addShape(obj.toRecord());
+        }
+      } else {
+        // Drag: use draft
+        if (!creationDraft) return;
+        if (creationDraft.type === 'rectangle') {
+          const { x, y, width, height, fill } = creationDraft;
+          const obj = new RectangleObject({ x, y, width, height, fill });
+          await addShape(obj.toRecord());
+        } else if (creationDraft.type === 'circle') {
+          const { x, y, width, height, fill } = creationDraft;
+          const obj = new CircleObject({ x, y, width, height, fill });
+          await addShape(obj.toRecord());
+        } else if (creationDraft.type === 'line') {
+          const { points, stroke, strokeWidth } = creationDraft;
+          const obj = new LineObject({ points, stroke, strokeWidth });
+          await addShape(obj.toRecord());
+        } else if (creationDraft.type === 'text') {
+          const { x, y, width, height } = creationDraft;
+          const obj = new TextObject({ x, y, width, height, fill: '#111827', text: 'Text' });
+          await addShape(obj.toRecord());
+        }
+      }
+    } finally {
+      setCreationDraft(null);
+      // Stay in current tool mode to allow multiple placements if desired
     }
   };
 
@@ -356,6 +496,8 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
         onClick={handleStageClick}
         onTap={handleStageClick}
         onMouseMove={handleMouseMove}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
         scaleX={scale}
         scaleY={scale}
         x={position.x}
@@ -373,6 +515,29 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             fill={CANVAS_BG_COLOR}
             listening={false}
           />
+          {/* Live creation preview */}
+          {creationDraft && (
+            <Group listening={false}>
+              {creationDraft.type === 'rectangle' && (
+                <Rect x={creationDraft.x} y={creationDraft.y} width={creationDraft.width} height={creationDraft.height} fill={creationDraft.fill} opacity={0.4} />
+              )}
+              {creationDraft.type === 'circle' && (
+                <Circle
+                  x={creationDraft.x + Math.min(creationDraft.width, creationDraft.height) / 2}
+                  y={creationDraft.y + Math.min(creationDraft.width, creationDraft.height) / 2}
+                  radius={Math.min(creationDraft.width, creationDraft.height) / 2}
+                  fill={creationDraft.fill}
+                  opacity={0.4}
+                />
+              )}
+              {creationDraft.type === 'line' && (
+                <Line points={creationDraft.points} stroke={creationDraft.stroke || '#374151'} strokeWidth={creationDraft.strokeWidth || 2} opacity={0.6} lineCap="round" lineJoin="round" />
+              )}
+              {creationDraft.type === 'text' && (
+                <KonvaText x={creationDraft.x} y={creationDraft.y} width={creationDraft.width} height={creationDraft.height} text={'Text'} fontSize={18} fill={'#111827'} opacity={0.6} />
+              )}
+            </Group>
+          )}
           
           {/* Shapes will be rendered here */}
           {shapes.map((shape) => {
@@ -399,183 +564,157 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             const lockIconSize = 28 / scale; // Base 28px (larger for visibility)
             const lockIconOffset = 12 / scale; // 12px from corner
             
+            const onSelect = () => {
+              if (isPanning) return;
+              if (lockedByOther) {
+                const ownerName = getLockOwnerName(shape);
+                showToast(`🔒 This shape is being edited by ${ownerName}`);
+              } else {
+                setSelectedId(shape.id);
+              }
+            };
+
+            const onStartEdit = async (e) => {
+              if (lockedByOther || isPanning) return;
+              const success = await startEditingShape(shape.id);
+              if (success) {
+                // Ensure only the currently edited shape remains marked as editing
+                setEditingShapes(new Set([shape.id]));
+              } else {
+                e?.target?.stopDrag?.();
+              }
+            };
+
+            const onDragMove = (e) => {
+              if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
+              const node = e.target;
+              if (shape.type === 'circle') {
+                const radius = node.radius?.() ?? Math.min(shape.width, shape.height) / 2;
+                const diameter = radius * 2;
+                const topLeftX = Math.max(0, Math.min(node.x() - radius, CANVAS_WIDTH - diameter));
+                const topLeftY = Math.max(0, Math.min(node.y() - radius, CANVAS_HEIGHT - diameter));
+                node.position({ x: topLeftX + radius, y: topLeftY + radius });
+                updateMyCursor(node.x(), node.y());
+                updateShapeTemporary(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter });
+              } else {
+                const width = node.width?.() ?? shape.width;
+                const height = node.height?.() ?? shape.height;
+                const newX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - width));
+                const newY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - height));
+                node.position({ x: newX, y: newY });
+                const centerX = newX + (width || 0) / 2;
+                const centerY = newY + (height || 0) / 2;
+                updateMyCursor(centerX, centerY);
+                updateShapeTemporary(shape.id, { x: newX, y: newY });
+              }
+            };
+
+            const onDragEnd = async (e) => {
+              if (lockedByOther || isPanning || !editingShapes.has(shape.id)) return;
+              const node = e.target;
+              if (shape.type === 'circle') {
+                const radius = node.radius?.() ?? Math.min(shape.width, shape.height) / 2;
+                const diameter = radius * 2;
+                let topLeftX = node.x() - radius;
+                let topLeftY = node.y() - radius;
+                topLeftX = Math.max(0, Math.min(topLeftX, CANVAS_WIDTH - diameter));
+                topLeftY = Math.max(0, Math.min(topLeftY, CANVAS_HEIGHT - diameter));
+                node.position({ x: topLeftX + radius, y: topLeftY + radius });
+                await finishEditingShape(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter });
+              } else {
+                const width = node.width?.() ?? shape.width;
+                const height = node.height?.() ?? shape.height;
+                const newX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - width));
+                const newY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - height));
+                node.position({ x: newX, y: newY });
+                await finishEditingShape(shape.id, { x: newX, y: newY, width, height });
+              }
+              // Clear all editing markers to avoid lingering borders
+              setEditingShapes(new Set());
+            };
+
+            const onTransform = (e) => {
+              if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
+              const node = e.target;
+              if (shape.type === 'circle') {
+                const scaleX = node.scaleX?.() ?? 1;
+                const scaleY = node.scaleY?.() ?? 1;
+                const currDiameterX = (node.width?.() ?? Math.min(shape.width, shape.height)) * scaleX;
+                const currDiameterY = (node.height?.() ?? Math.min(shape.width, shape.height)) * scaleY;
+                const diameter = Math.max(MIN_SHAPE_SIZE, Math.min(Math.min(currDiameterX, currDiameterY), MAX_SHAPE_SIZE));
+                const radius = diameter / 2;
+                const topLeftX = node.x() - radius;
+                const topLeftY = node.y() - radius;
+                updateMyCursor(node.x(), node.y());
+                updateShapeTemporary(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter });
+              } else {
+                const scaleX = node.scaleX?.() ?? 1;
+                const scaleY = node.scaleY?.() ?? 1;
+                const width = Math.max(MIN_SHAPE_SIZE, Math.min((node.width?.() ?? shape.width) * scaleX, MAX_SHAPE_SIZE));
+                const height = Math.max(MIN_SHAPE_SIZE, Math.min((node.height?.() ?? shape.height) * scaleY, MAX_SHAPE_SIZE));
+                const centerX = node.x() + width / 2;
+                const centerY = node.y() + height / 2;
+                updateMyCursor(centerX, centerY);
+                updateShapeTemporary(shape.id, { x: node.x(), y: node.y(), width, height });
+              }
+            };
+
+            const onTransformEnd = async (e) => {
+              if (lockedByOther || isPanning || !editingShapes.has(shape.id)) return;
+              const node = e.target;
+              if (shape.type === 'circle') {
+                const scaleX = node.scaleX?.() ?? 1;
+                const scaleY = node.scaleY?.() ?? 1;
+                const currDiameterX = (node.width?.() ?? Math.min(shape.width, shape.height)) * scaleX;
+                const currDiameterY = (node.height?.() ?? Math.min(shape.width, shape.height)) * scaleY;
+                const diameter = Math.max(MIN_SHAPE_SIZE, Math.min(Math.min(currDiameterX, currDiameterY), MAX_SHAPE_SIZE));
+                const radius = diameter / 2;
+                node.scaleX?.(1);
+                node.scaleY?.(1);
+                node.radius?.(radius);
+                let topLeftX = node.x() - radius;
+                let topLeftY = node.y() - radius;
+                topLeftX = Math.max(0, Math.min(topLeftX, CANVAS_WIDTH - diameter));
+                topLeftY = Math.max(0, Math.min(topLeftY, CANVAS_HEIGHT - diameter));
+                node.position({ x: topLeftX + radius, y: topLeftY + radius });
+                await finishEditingShape(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter, rotation: node.rotation?.() ?? 0 });
+              } else {
+                const scaleX = node.scaleX?.() ?? 1;
+                const scaleY = node.scaleY?.() ?? 1;
+                const width = Math.max(MIN_SHAPE_SIZE, Math.min((node.width?.() ?? shape.width) * scaleX, MAX_SHAPE_SIZE));
+                const height = Math.max(MIN_SHAPE_SIZE, Math.min((node.height?.() ?? shape.height) * scaleY, MAX_SHAPE_SIZE));
+                node.scaleX?.(1);
+                node.scaleY?.(1);
+                node.size?.({ width, height });
+                const constrainedX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - width));
+                const constrainedY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - height));
+                node.position({ x: constrainedX, y: constrainedY });
+                await finishEditingShape(shape.id, { x: constrainedX, y: constrainedY, width, height, rotation: node.rotation?.() ?? 0 });
+              }
+              // Clear all editing markers to avoid lingering borders
+              setEditingShapes(new Set());
+            };
+
             return (
               <Group key={shape.id}>
-                <Rect
-                  id={shape.id}
-                  x={shape.x}
-                  y={shape.y}
-                  width={shape.width}
-                  height={shape.height}
-                  fill={shape.fill}
-                  opacity={lockedByOther ? 0.6 : 1}
-                  draggable={!isPanning && !lockedByOther}
-                  onClick={() => {
-                    if (isPanning) return;
-                    
-                    if (lockedByOther) {
-                      const ownerName = getLockOwnerName(shape);
-                      showToast(`🔒 This shape is being edited by ${ownerName}`);
-                    } else {
-                      setSelectedId(shape.id);
-                    }
-                  }}
-                  onTap={() => {
-                    if (isPanning) return;
-                    
-                    if (lockedByOther) {
-                      const ownerName = getLockOwnerName(shape);
-                      showToast(`🔒 This shape is being edited by ${ownerName}`);
-                    } else {
-                      setSelectedId(shape.id);
-                    }
-                  }}
-                  stroke={
-                    isSelected 
-                      ? '#0066ff' 
-                      : (lockedByOther || isBeingEditedByMe) && lockOwnerColor
-                      ? lockOwnerColor
-                      : undefined
-                  }
-                  strokeWidth={
-                    isSelected 
-                      ? scaledStrokeWidth * 0.5  // Selected: thinner blue border
-                      : (lockedByOther || isBeingEditedByMe)
-                      ? scaledStrokeWidth  // Locked: thick colored border
-                      : 0
-                  }
-                  dash={(lockedByOther || isBeingEditedByMe) ? [15 / scale, 8 / scale] : undefined}
-                onDragStart={async (e) => {
-                  if (lockedByOther) return;
-                  
-                  // Start editing session (lock + copy to RTDB)
-                  const success = await startEditingShape(shape.id);
-                  if (success) {
-                    setEditingShapes((prev) => new Set(prev).add(shape.id));
-                  } else {
-                    // Failed to acquire lock, cancel drag
-                    e.target.stopDrag();
-                  }
-                }}
-                onDragMove={(e) => {
-                  if (lockedByOther || !editingShapesRef.current.has(shape.id)) return;
-                  
-                  const node = e.target;
-                  // Constrain to canvas boundaries during drag
-                  const newX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - node.width()));
-                  const newY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - node.height()));
-                  
-                  node.position({ x: newX, y: newY });
-                  
-                  // Update cursor position to follow the shape (center of shape)
-                  const centerX = newX + node.width() / 2;
-                  const centerY = newY + node.height() / 2;
-                  updateMyCursor(centerX, centerY);
-                  
-                  // Update position in RTDB (temporary) - throttled automatically
-                  updateShapeTemporary(shape.id, { x: newX, y: newY });
-                }}
-                onDragEnd={async (e) => {
-                  if (lockedByOther || !editingShapes.has(shape.id)) return;
-                  
-                  const node = e.target;
-                  // Final position constraint
-                  const newX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - node.width()));
-                  const newY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - node.height()));
-                  
-                  node.position({ x: newX, y: newY });
-
-                  // Finish editing with final position (commit to Firestore and clear RTDB)
-                  await finishEditingShape(shape.id, {
-                    x: newX,
-                    y: newY,
-                    width: node.width(),
-                    height: node.height()
-                  });
-                  setEditingShapes((prev) => {
-                    const next = new Set(prev);
-                    next.delete(shape.id);
-                    return next;
-                  });
-                }}
-                onTransformStart={async () => {
-                  if (lockedByOther) return;
-                  
-                  // Start editing session (lock + copy to RTDB)
-                  const success = await startEditingShape(shape.id);
-                  if (success) {
-                    setEditingShapes((prev) => new Set(prev).add(shape.id));
-                  }
-                }}
-                onTransform={(e) => {
-                  if (lockedByOther || !editingShapesRef.current.has(shape.id)) return;
-                  
-                  const node = e.target;
-                  const scaleX = node.scaleX();
-                  const scaleY = node.scaleY();
-
-                  const width = Math.max(
-                    MIN_SHAPE_SIZE,
-                    Math.min(node.width() * scaleX, MAX_SHAPE_SIZE),
-                  );
-                  const height = Math.max(
-                    MIN_SHAPE_SIZE,
-                    Math.min(node.height() * scaleY, MAX_SHAPE_SIZE),
-                  );
-
-                  // Update cursor position to follow the shape (center of shape)
-                  const centerX = node.x() + width / 2;
-                  const centerY = node.y() + height / 2;
-                  updateMyCursor(centerX, centerY);
-
-                  // Update RTDB with current transform - throttled automatically
-                  updateShapeTemporary(shape.id, {
-                    x: node.x(),
-                    y: node.y(),
-                    width,
-                    height,
-                  });
-                }}
-                onTransformEnd={async (e) => {
-                  if (lockedByOther || !editingShapes.has(shape.id)) return;
-                  
-                  const node = e.target;
-                  const scaleX = node.scaleX();
-                  const scaleY = node.scaleY();
-
-                  const width = Math.max(
-                    MIN_SHAPE_SIZE,
-                    Math.min(node.width() * scaleX, MAX_SHAPE_SIZE),
-                  );
-                  const height = Math.max(
-                    MIN_SHAPE_SIZE,
-                    Math.min(node.height() * scaleY, MAX_SHAPE_SIZE),
-                  );
-
-                  node.scaleX(1);
-                  node.scaleY(1);
-                  node.size({ width, height });
-
-                  const constrainedX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - width));
-                  const constrainedY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - height));
-
-                  node.position({ x: constrainedX, y: constrainedY });
-
-                  // Finish editing with final state (commit to Firestore and clear RTDB)
-                  await finishEditingShape(shape.id, {
-                    x: constrainedX,
-                    y: constrainedY,
-                    width,
-                    height
-                  });
-                  setEditingShapes((prev) => {
-                    const next = new Set(prev);
-                    next.delete(shape.id);
-                    return next;
-                  });
-                }}
-              />
-              
+                <ShapeNode
+                  shape={shape}
+                  scale={scale}
+                  isSelected={isSelected}
+                  isLockedByOther={lockedByOther}
+                  isBeingEditedByMe={isBeingEditedByMe}
+                  lockOwnerColor={lockOwnerColor}
+                  onSelect={onSelect}
+                  onStartEdit={onStartEdit}
+                  onDragMove={onDragMove}
+                  onDragEnd={onDragEnd}
+                  onTransform={onTransform}
+                  onTransformEnd={onTransformEnd}
+                  minSize={MIN_SHAPE_SIZE}
+                  maxSize={MAX_SHAPE_SIZE}
+                  isPanning={isPanning}
+                />
+                
               {/* Lock icon - only show for shapes locked by OTHER users, not yourself */}
               {isLocked && lockOwnerColor && !isBeingEditedByMe && (
                 <Group
@@ -610,7 +749,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
           })}
           <Transformer
             ref={transformerRef}
-            rotateEnabled={false}
+            rotateEnabled={true}
             boundBoxFunc={(oldBox, newBox) => {
               if (
                 newBox.width < MIN_SHAPE_SIZE ||
@@ -642,6 +781,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       
       <CanvasControls />
       <CanvasToolbar />
+      <StylePanel />
       <CanvasHelpOverlay />
       
       {/* Toast notification */}

@@ -137,7 +137,22 @@ For overall project status and completed features, see `memory-bank/progress.md`
 ## 🐛 Known Issues
 
 ### Active Bugs
-- None currently tracked
+
+#### 1. Lock Border Persistence (Medium Priority) 🐛
+**Discovered**: October 14, 2025  
+**Symptom**: When dragging multiple shapes in rapid sequence, lock borders persist on all previously dragged shapes  
+**Expected**: Only the currently locked shape should show lock border  
+**Reproduction**:
+1. Create multiple rectangles
+2. Quickly drag one shape, release
+3. Immediately drag another shape
+4. Observe: Previous shape still has lock border
+
+**Impact**: Visual clutter, confusing lock state indication (doesn't affect functionality)  
+**Location**: `Canvas.jsx` - `editingShapes` state management, line ~45  
+**Root Cause**: `editingShapes` Set not being cleared when drag ends  
+**Priority**: Medium - Visual bug, doesn't block functionality  
+**Target Fix**: V1.1.0
 
 ### Limitations
 1. **Shape Type Rendering**: Only rectangles render (in progress above)

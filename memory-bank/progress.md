@@ -11,14 +11,14 @@
 - [x] Session persistence
 
 ### Canvas Core
-- [x] 5000x5000 infinite canvas
-- [x] Viewport panning (Space + drag)
-- [x] Mouse wheel zoom (with limits)
+- [x] 5000x5000 canvas
+- [x] Viewport panning (Space + drag, overrides shape interactions)
+- [x] Zoom (Ctrl/⌘ + scroll; with limits)
 - [x] Zoom controls (in/out/reset)
 - [x] Canvas centering and positioning
 
 ### Shape Management
-- [x] Create shapes (currently rectangles)
+- [x] Create shapes (rectangle, circle, line, text)
 - [x] Move shapes (drag)
 - [x] Resize shapes (transform handles)
 - [x] Delete shapes (keyboard)
@@ -37,8 +37,8 @@
 - [x] Presence list with online users
 
 ### UI/UX
-- [x] Modern toolbar with tool selection
-- [x] Color picker with presets
+- [x] Modern toolbar with tool selection (persistent tool mode)
+- [x] Right-side Style panel (fill, rotation)
 - [x] Zoom controls (bottom-left)
 - [x] Profile dropdown with logout
 - [x] Expandable presence list
@@ -56,19 +56,14 @@
 ## What's Left to Build 🚧
 
 ### Shape Types (High Priority)
-- [ ] Circle shape rendering
-- [ ] Line/Arrow shape rendering
-- [ ] Text box implementation
 - [ ] Shape type validation
 
 ### Tool Modes
-- [ ] Proper tool mode state management
-- [ ] Draw mode interaction patterns
-- [ ] Tool mode persistence
-- [ ] Escape to cancel/return to select
+- [x] Tool mode persistence (V/R/C/L/T; Esc to Select)
+- [x] Draw mode: click to place, click & drag to size
 
-### Shape Features
-- [ ] Shape fill color editing (after creation)
+- [x] Shape fill color editing (after creation)
+- [x] Rotation via handles
 - [ ] Shape stroke/border options
 - [ ] Copy/paste shapes
 - [ ] Duplicate shapes
@@ -120,11 +115,22 @@
 - ✅ Version tagged: v1.0.0
 - ✅ Comprehensive documentation (CHANGELOG, Release Notes)
 
+### Documentation Status (October 14, 2025)
+- ✅ Documentation restructure completed
+- ✅ Memory bank now primary documentation source
+- ✅ PRD.md and tasks.md marked as historical
+- ✅ current-todos.md created for active work
+- ✅ testing-strategy.md created with 45+ user stories
+- ✅ Architecture evolution and rationale documented
+
 ## Known Limitations
 
-1. **Shape Types**: Only rectangles render currently (Circle/Line/Text UI exists but not functional)
-2. **Tool Modes**: All tools create shapes immediately (no draw mode)
-3. **Mobile**: Desktop-optimized, mobile needs work
-4. **Scale**: Tested with <500 shapes, performance with 1000+ unknown
-5. **Concurrent Users**: Tested with 5-10 users, higher load untested
+1. **Mobile**: Desktop-optimized, mobile needs work
+2. **Scale**: Tested with <500 shapes, performance with 1000+ unknown
+3. **Concurrent Users**: Tested with 5-10 users, higher load untested
+
+## Known Bugs
+
+### ✅ Lock Border Persistence (Resolved)
+Resolved by limiting local `editingShapes` to the active shape on start, clearing on drag/transform end, and clearing on deselect.
 

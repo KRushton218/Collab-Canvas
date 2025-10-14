@@ -17,9 +17,7 @@ const clampSize = (value) => {
 };
 
 const CanvasToolbar = () => {
-  const { addShape, stageRef, scale } = useContext(CanvasContext);
-  const [activeTool, setActiveTool] = useState('select');
-  const [fill, setFill] = useState('#6366f1');
+  const { activeTool, setActiveTool, currentFill, setCurrentFill } = useContext(CanvasContext);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const tools = [
@@ -31,7 +29,8 @@ const CanvasToolbar = () => {
           <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
         </svg>
       ),
-      tooltip: 'Click & Drag (Space)',
+      tooltip: 'Select (V) · Pan (Space)',
+      shortcut: 'V',
     },
     {
       id: 'rectangle',
@@ -41,7 +40,8 @@ const CanvasToolbar = () => {
           <rect x="4" y="6" width="16" height="12" rx="2" />
         </svg>
       ),
-      tooltip: 'Rectangle',
+      tooltip: 'Rectangle (R)',
+      shortcut: 'R',
     },
     {
       id: 'circle',
@@ -51,7 +51,8 @@ const CanvasToolbar = () => {
           <circle cx="12" cy="12" r="8" />
         </svg>
       ),
-      tooltip: 'Circle',
+      tooltip: 'Circle (C)',
+      shortcut: 'C',
     },
     {
       id: 'line',
@@ -62,7 +63,8 @@ const CanvasToolbar = () => {
           <path d="M19 5l-2 2m0-2l2 2" />
         </svg>
       ),
-      tooltip: 'Arrow / Line',
+      tooltip: 'Line (L)',
+      shortcut: 'L',
     },
     {
       id: 'text',
@@ -72,49 +74,13 @@ const CanvasToolbar = () => {
           <path d="M4 7V4h16v3M9 20h6M12 4v16" />
         </svg>
       ),
-      tooltip: 'Text Box',
+      tooltip: 'Text (T)',
+      shortcut: 'T',
     },
   ];
 
   const handleToolClick = (toolId) => {
     setActiveTool(toolId);
-    
-    // If not select tool, add the corresponding shape
-    if (toolId !== 'select') {
-      addShapeToCanvas(toolId);
-    }
-  };
-
-  const addShapeToCanvas = (shapeType) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-
-    const shapeWidth = DEFAULT_SHAPE_SIZE;
-    const shapeHeight = DEFAULT_SHAPE_SIZE;
-
-    const centerX = (window.innerWidth / 2 - stage.x()) / scale;
-    const centerY = (window.innerHeight / 2 - stage.y()) / scale;
-
-    const constrainedX = Math.max(
-      0,
-      Math.min(centerX - shapeWidth / 2, CANVAS_WIDTH - shapeWidth),
-    );
-    const constrainedY = Math.max(
-      0,
-      Math.min(centerY - shapeHeight / 2, CANVAS_HEIGHT - shapeHeight),
-    );
-
-    addShape({
-      type: shapeType,
-      x: constrainedX,
-      y: constrainedY,
-      width: shapeWidth,
-      height: shapeHeight,
-      fill,
-    });
-
-    // Return to select tool after adding shape
-    setActiveTool('select');
   };
 
   return (
@@ -169,6 +135,21 @@ const CanvasToolbar = () => {
             }}
           >
             {tool.icon}
+            {tool.shortcut && (
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: '4px',
+                  right: '6px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: activeTool === tool.id ? 'white' : '#6b7280',
+                  opacity: 0.9,
+                }}
+              >
+                {tool.shortcut}
+              </span>
+            )}
           </button>
         ))}
 
@@ -179,44 +160,7 @@ const CanvasToolbar = () => {
           margin: '4px 0' 
         }} />
 
-        {/* Color Picker Button */}
-        <button
-          onClick={() => setShowColorPicker(!showColorPicker)}
-          title="Fill Color"
-          style={{
-            width: '40px',
-            height: '40px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: showColorPicker ? '#f3f4f6' : 'transparent',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            position: 'relative',
-          }}
-          onMouseEnter={(e) => {
-            if (!showColorPicker) {
-              e.currentTarget.style.backgroundColor = '#f3f4f6';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!showColorPicker) {
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }
-          }}
-        >
-          <div
-            style={{
-              width: '24px',
-              height: '24px',
-              borderRadius: '6px',
-              backgroundColor: fill,
-              border: '2px solid rgba(0, 0, 0, 0.1)',
-            }}
-          />
-        </button>
+        {/* Color Picker removed from main toolbar; moved to style panel */}
       </div>
 
       {/* Color Picker Popover */}
@@ -240,8 +184,8 @@ const CanvasToolbar = () => {
           </div>
           <input
             type="color"
-            value={fill}
-            onChange={(e) => setFill(e.target.value)}
+            value={currentFill}
+            onChange={(e) => setCurrentFill(e.target.value)}
             style={{
               width: '180px',
               height: '48px',
@@ -249,18 +193,29 @@ const CanvasToolbar = () => {
               borderRadius: '6px',
               cursor: 'pointer',
             }}
+            onBlur={async (e) => {
+              // Apply fill to selected shape when color picker loses focus
+              if (selectedId) {
+                await updateShape(selectedId, { fill: e.target.value });
+              }
+            }}
           />
           <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'].map((color) => (
               <button
                 key={color}
-                onClick={() => setFill(color)}
+                onClick={async () => {
+                  setCurrentFill(color);
+                  if (selectedId) {
+                    await updateShape(selectedId, { fill: color });
+                  }
+                }}
                 style={{
                   width: '32px',
                   height: '32px',
                   borderRadius: '6px',
                   backgroundColor: color,
-                  border: fill === color ? '3px solid #374151' : '2px solid rgba(0, 0, 0, 0.1)',
+                  border: currentFill === color ? '3px solid #374151' : '2px solid rgba(0, 0, 0, 0.1)',
                   cursor: 'pointer',
                   transition: 'transform 0.2s ease',
                 }}
