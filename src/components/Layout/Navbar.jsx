@@ -1,7 +1,7 @@
 // Simple Navbar Component
 import { useAuth } from '../../hooks/useAuth';
 
-export const Navbar = () => {
+export const Navbar = ({ onlineUsersCount = 0 }) => {
   const { currentUser, signOut } = useAuth();
 
   const handleLogout = async () => {
@@ -17,6 +17,12 @@ export const Navbar = () => {
       <div className="text-xl font-bold">CollabCanvas</div>
       
       <div className="flex items-center gap-4">
+        {/* Online users indicator */}
+        <div className="flex items-center gap-2 text-sm">
+          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+          <span>{onlineUsersCount} online</span>
+        </div>
+        
         <span className="text-sm">
           {currentUser?.displayName || 'User'}
         </span>

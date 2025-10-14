@@ -1,7 +1,6 @@
 import { doc, getDoc, updateDoc, onSnapshot, setDoc } from 'firebase/firestore';
-import { ref, onDisconnect, set } from 'firebase/database';
 import { CANVAS_ID } from '../utils/constants';
-import { db, rtdb } from './firebase';
+import { db } from './firebase';
 
 // Canvas document reference - single shared canvas for MVP
 const canvasDocRef = doc(db, 'canvas', CANVAS_ID);
@@ -67,7 +66,6 @@ export const createShape = async (shapeData) => {
       width: shapeData.width,
       height: shapeData.height,
       fill: shapeData.fill,
-      lockedBy: null,
       createdAt: new Date().toISOString(),
     };
 
@@ -141,168 +139,32 @@ export const deleteShape = async (shapeId) => {
 };
 
 /**
- * Lock a shape for exclusive editing
- * @param {string} shapeId - Shape ID to lock
- * @param {string} userId - User ID who is locking the shape
- * @returns {Promise<boolean>} True if lock was successful, false if already locked
+ * DEPRECATED - Lock management has been moved to realtimeShapes.js
+ * Locks are now managed in RTDB for real-time performance
+ * Use startEditingShape/finishEditingShape from realtimeShapes.js instead
+ * 
+ * These functions are kept for backward compatibility but will be removed
  */
-export const lockShape = async (shapeId, userId) => {
-  try {
-    const docSnap = await getDoc(canvasDocRef);
-    if (!docSnap.exists()) {
-      throw new Error('Canvas document does not exist');
-    }
-
-    const currentShapes = docSnap.data().shapes || [];
-    const shape = currentShapes.find((s) => s.id === shapeId);
-
-    if (!shape) {
-      throw new Error('Shape not found');
-    }
-
-    // Check if already locked by someone else
-    if (shape.lockedBy && shape.lockedBy !== userId) {
-      return false; // Already locked by another user
-    }
-
-    // Lock the shape
-    const updatedShapes = currentShapes.map((s) =>
-      s.id === shapeId ? { ...s, lockedBy: userId } : s
-    );
-
-    await updateDoc(canvasDocRef, {
-      shapes: updatedShapes,
-      lastModified: new Date().toISOString(),
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Error locking shape:', error);
-    throw error;
-  }
-};
-
-/**
- * Unlock a shape
- * @param {string} shapeId - Shape ID to unlock
- * @param {string} userId - User ID who is unlocking (must match lockedBy)
- * @returns {Promise<void>}
- */
-export const unlockShape = async (shapeId, userId) => {
-  try {
-    const docSnap = await getDoc(canvasDocRef);
-    if (!docSnap.exists()) {
-      throw new Error('Canvas document does not exist');
-    }
-
-    const currentShapes = docSnap.data().shapes || [];
-    const updatedShapes = currentShapes.map((s) => {
-      // Only unlock if it's locked by this user
-      if (s.id === shapeId && s.lockedBy === userId) {
-        return { ...s, lockedBy: null };
-      }
-      return s;
-    });
-
-    await updateDoc(canvasDocRef, {
-      shapes: updatedShapes,
-      lastModified: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Error unlocking shape:', error);
-    throw error;
-  }
-};
-
-/**
- * Unlock all shapes locked by a specific user (for disconnect handling)
- * @param {string} userId - User ID whose locks should be released
- * @returns {Promise<void>}
- */
-export const unlockAllUserShapes = async (userId) => {
-  try {
-    const docSnap = await getDoc(canvasDocRef);
-    if (!docSnap.exists()) {
-      return;
-    }
-
-    const currentShapes = docSnap.data().shapes || [];
-    const updatedShapes = currentShapes.map((shape) => {
-      if (shape.lockedBy === userId) {
-        return { ...shape, lockedBy: null };
-      }
-      return shape;
-    });
-
-    await updateDoc(canvasDocRef, {
-      shapes: updatedShapes,
-      lastModified: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Error unlocking all user shapes:', error);
-    throw error;
-  }
-};
-
-/**
- * Set up automatic unlock on disconnect for a user
- * Uses Realtime Database to track when user disconnects
- * @param {string} userId - User ID
- * @returns {Function} Cleanup function
- */
-export const setupDisconnectHandler = (userId) => {
-  if (!userId) return () => {};
-
-  const userPresenceRef = ref(rtdb, `sessions/${CANVAS_ID}/${userId}/connected`);
-  
-  // Set user as connected
-  set(userPresenceRef, true);
-
-  // Set up onDisconnect to mark user as disconnected
-  const disconnectRef = onDisconnect(userPresenceRef);
-  disconnectRef.set(false);
-
-  // Handle page unload/close
-  const handleBeforeUnload = () => {
-    // Synchronously unlock all shapes (best effort)
-    unlockAllUserShapes(userId).catch((error) => {
-      console.error('Error unlocking shapes on unload:', error);
-    });
-    // Set presence to false
-    set(userPresenceRef, false).catch((error) => {
-      console.error('Error setting presence on unload:', error);
-    });
-  };
-
-  window.addEventListener('beforeunload', handleBeforeUnload);
-
-  // Return cleanup function
-  return () => {
-    window.removeEventListener('beforeunload', handleBeforeUnload);
-    set(userPresenceRef, false).catch((error) => {
-      console.error('Error setting presence:', error);
-    });
-    unlockAllUserShapes(userId).catch((error) => {
-      console.error('Error unlocking shapes:', error);
-    });
-  };
-};
 
 /**
  * Check if a shape is locked by another user
- * @param {Object} shape - Shape object
+ * @param {Object} locks - Lock state from RTDB
+ * @param {string} shapeId - Shape ID
  * @param {string} currentUserId - Current user's ID
  * @returns {boolean} True if locked by another user
  */
-export const isShapeLockedByOther = (shape, currentUserId) => {
-  return !!(shape.lockedBy && shape.lockedBy !== currentUserId);
+export const isShapeLockedByOther = (locks, shapeId, currentUserId) => {
+  const lock = locks[shapeId];
+  return !!(lock && lock.lockedBy && lock.lockedBy !== currentUserId);
 };
 
 /**
  * Get the user who has locked a shape
- * @param {Object} shape - Shape object
+ * @param {Object} locks - Lock state from RTDB
+ * @param {string} shapeId - Shape ID
  * @returns {string|null} User ID or null if not locked
  */
-export const getShapeLockOwner = (shape) => {
-  return shape.lockedBy || null;
+export const getShapeLockOwner = (locks, shapeId) => {
+  const lock = locks[shapeId];
+  return lock?.lockedBy || null;
 };

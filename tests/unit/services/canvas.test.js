@@ -1,10 +1,11 @@
 /**
  * Canvas Service Tests
  * 
- * Note: This file has been superseded by shapes.test.js
- * The canvas service now acts as a re-export wrapper for backward compatibility.
+ * Note: The canvas service now acts as a re-export wrapper.
+ * - Persistent operations (Firestore): shapes.js
+ * - Real-time operations (RTDB): realtimeShapes.js
  * 
- * Tests have been moved to shapes.test.js to reflect the new architecture.
+ * Detailed tests are in shapes.test.js for Firestore operations.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,24 +14,34 @@ import {
   createShape,
   updateShape,
   deleteShape,
-  lockShape,
-  unlockShape,
-  unlockAllUserShapes,
   isShapeLockedByOther,
   getShapeLockOwner,
+  startEditingShape,
+  updateEditingShape,
+  finishEditingShape,
+  subscribeToActiveEdits,
+  subscribeToLocks,
+  setupDisconnectCleanup,
 } from '../../../src/services/canvas';
 
-describe('Canvas Service - Backward Compatibility', () => {
-  it('should re-export shape operations for backward compatibility', () => {
-    // Verify that all functions are available through canvas.js
+describe('Canvas Service - Re-exports', () => {
+  it('should re-export Firestore shape operations', () => {
+    // Verify that Firestore operations are available
     expect(typeof loadShapes).toBe('function');
     expect(typeof createShape).toBe('function');
     expect(typeof updateShape).toBe('function');
     expect(typeof deleteShape).toBe('function');
-    expect(typeof lockShape).toBe('function');
-    expect(typeof unlockShape).toBe('function');
-    expect(typeof unlockAllUserShapes).toBe('function');
     expect(typeof isShapeLockedByOther).toBe('function');
     expect(typeof getShapeLockOwner).toBe('function');
+  });
+
+  it('should re-export RTDB real-time operations', () => {
+    // Verify that RTDB operations are available
+    expect(typeof startEditingShape).toBe('function');
+    expect(typeof updateEditingShape).toBe('function');
+    expect(typeof finishEditingShape).toBe('function');
+    expect(typeof subscribeToActiveEdits).toBe('function');
+    expect(typeof subscribeToLocks).toBe('function');
+    expect(typeof setupDisconnectCleanup).toBe('function');
   });
 });

@@ -1,7 +1,9 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Transformer } from 'react-konva';
+import { Stage, Layer, Rect, Transformer, Group, Path } from 'react-konva';
 import { CanvasContext } from '../../contexts/CanvasContext';
 import { isShapeLockedByOther } from '../../services/shapes';
+import { useCursors } from '../../hooks/useCursors';
+import { Cursor } from '../Collaboration/Cursor';
 import { 
   CANVAS_WIDTH, 
   CANVAS_HEIGHT, 
@@ -15,7 +17,7 @@ import CanvasControls from './CanvasControls';
 import CanvasToolbar from './CanvasToolbar';
 import CanvasHelpOverlay from './CanvasHelpOverlay';
 
-const Canvas = () => {
+const Canvas = ({ currentUserColor = '#000000' }) => {
   const {
     shapes,
     selectedId,
@@ -27,12 +29,44 @@ const Canvas = () => {
     setPosition,
     stageRef,
     updateShape,
+    updateShapeTemporary,
+    startEditingShape,
+    finishEditingShape,
     deleteShape,
     currentUser,
     loading,
+    locks,
   } = useContext(CanvasContext);
   const transformerRef = useRef(null);
   const [isPanning, setIsPanning] = useState(false);
+  
+  // Track which shapes are being actively edited by this user
+  // This ensures the lock border persists throughout the drag/transform
+  const [editingShapes, setEditingShapes] = useState(new Set());
+  const editingShapesRef = useRef(new Set());
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    editingShapesRef.current = editingShapes;
+  }, [editingShapes]);
+  
+  // Cursor tracking and online users for lock colors
+  const { cursors, updateMyCursor } = useCursors(currentUser?.uid, stageRef);
+  
+  // Get lock owner's color helper
+  const getLockOwnerColor = (shape) => {
+    if (!shape.lockedBy) return null;
+    
+    // Find the user in cursors (which includes all online users)
+    const lockOwner = Object.entries(cursors).find(([userId]) => userId === shape.lockedBy);
+    
+    // Return their color, or current user's color if they locked it
+    if (shape.lockedBy === currentUser?.uid) {
+      return currentUserColor;
+    }
+    
+    return lockOwner ? lockOwner[1].color : '#ff6b6b'; // Fallback to red
+  };
 
   const isEditableElement = (element) => {
     if (!element) return false;
@@ -99,6 +133,37 @@ const Canvas = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, deleteShape]);
+
+  // Cleanup: finish any active editing sessions on unmount
+  useEffect(() => {
+    return () => {
+      // Finish editing all shapes we have open
+      // Use the ref to get the current state at cleanup time
+      const shapesToFinish = Array.from(editingShapesRef.current);
+      shapesToFinish.forEach((shapeId) => {
+        // Get the shape's current position from the canvas
+        const stage = stageRef.current;
+        if (stage) {
+          const node = stage.findOne(`#${shapeId}`);
+          if (node) {
+            finishEditingShape(shapeId, {
+              x: node.x(),
+              y: node.y(),
+              width: node.width(),
+              height: node.height()
+            }).catch((error) => {
+              console.error('Error finishing shape edit on unmount:', error);
+            });
+          } else {
+            // Node not found, just cleanup RTDB without Firestore commit
+            finishEditingShape(shapeId).catch((error) => {
+              console.error('Error finishing shape edit on unmount:', error);
+            });
+          }
+        }
+      });
+    };
+  }, []); // Empty deps - cleanup function uses refs
 
   // Handle drag end for stage panning
   const handleDragEnd = (e) => {
@@ -182,7 +247,7 @@ const Canvas = () => {
 
   // Check if shape is locked by another user
   const isLockedByOther = (shape) => {
-    return currentUser && isShapeLockedByOther(shape, currentUser.uid);
+    return currentUser && isShapeLockedByOther(locks, shape.id, currentUser.uid);
   };
 
   // Show loading state
@@ -201,6 +266,32 @@ const Canvas = () => {
     );
   }
 
+  // Handle mouse move for cursor tracking
+  const handleMouseMove = (e) => {
+    if (!stageRef.current) return;
+    
+    const stage = stageRef.current;
+    const pointerPosition = stage.getPointerPosition();
+    
+    if (pointerPosition) {
+      // Convert screen coordinates to canvas coordinates
+      const transform = stage.getAbsoluteTransform().copy();
+      transform.invert();
+      const canvasPos = transform.point(pointerPosition);
+      
+      // Update cursor position in Firebase
+      updateMyCursor(canvasPos.x, canvasPos.y);
+    }
+  };
+
+  // Custom cursor SVG with user's color outline
+  const customCursorSVG = `data:image/svg+xml;base64,${btoa(`
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 1 1 L 1 15 L 5 11 L 8 17 L 10 16 L 7 10 L 12 10 Z" 
+            fill="black" stroke="${currentUserColor}" stroke-width="2"/>
+    </svg>
+  `)}`;
+
   return (
     <div style={{ 
       width: '100vw', 
@@ -208,6 +299,13 @@ const Canvas = () => {
       overflow: 'hidden',
       backgroundColor: '#ffffff'
     }}>
+      {/* Custom cursor style with outline for current user */}
+      <style>{`
+        canvas {
+          cursor: url('${customCursorSVG}') 1 1, auto !important;
+        }
+      `}</style>
+      
       <Stage
         ref={stageRef}
         width={window.innerWidth}
@@ -216,6 +314,7 @@ const Canvas = () => {
         onWheel={handleWheel}
         onClick={handleStageClick}
         onTap={handleStageClick}
+        onMouseMove={handleMouseMove}
         scaleX={scale}
         scaleY={scale}
         x={position.x}
@@ -236,54 +335,158 @@ const Canvas = () => {
           
           {/* Shapes will be rendered here */}
           {shapes.map((shape) => {
+            // Check if this shape is being actively edited by current user
+            const isBeingEditedByMe = editingShapesRef.current.has(shape.id);
+            
+            // Determine lock state - either from RTDB or local editing state
             const lockedByOther = isLockedByOther(shape);
             const isSelected = selectedId === shape.id;
             
+            // If we're editing it locally, show our color border
+            // Otherwise show the lock owner's color
+            const isLocked = isBeingEditedByMe || !!shape.lockedBy;
+            const lockOwnerColor = isBeingEditedByMe 
+              ? currentUserColor 
+              : getLockOwnerColor(shape);
+            
+            // Calculate stroke width that scales inversely with zoom
+            // Base width of 6px (scaled to maintain visibility when zoomed out)
+            const baseStrokeWidth = 6;
+            const scaledStrokeWidth = baseStrokeWidth / scale;
+            
+            // Lock icon size and position (scales with zoom)
+            const lockIconSize = 28 / scale; // Base 28px (larger for visibility)
+            const lockIconOffset = 12 / scale; // 12px from corner
+            
             return (
-              <Rect
-                key={shape.id}
-                id={shape.id}
-                x={shape.x}
-                y={shape.y}
-                width={shape.width}
-                height={shape.height}
-                fill={shape.fill}
-                opacity={lockedByOther ? 0.5 : 1}
-                draggable={!isPanning && !lockedByOther}
-                onClick={() => {
-                  if (!isPanning && !lockedByOther) {
-                    setSelectedId(shape.id);
+              <Group key={shape.id}>
+                <Rect
+                  id={shape.id}
+                  x={shape.x}
+                  y={shape.y}
+                  width={shape.width}
+                  height={shape.height}
+                  fill={shape.fill}
+                  opacity={lockedByOther ? 0.6 : 1}
+                  draggable={!isPanning && !lockedByOther}
+                  onClick={() => {
+                    if (!isPanning && !lockedByOther) {
+                      setSelectedId(shape.id);
+                    }
+                  }}
+                  onTap={() => {
+                    if (!isPanning && !lockedByOther) {
+                      setSelectedId(shape.id);
+                    }
+                  }}
+                  stroke={
+                    isSelected 
+                      ? '#0066ff' 
+                      : (lockedByOther || isBeingEditedByMe) && lockOwnerColor
+                      ? lockOwnerColor
+                      : undefined
                   }
-                }}
-                onTap={() => {
-                  if (!isPanning && !lockedByOther) {
-                    setSelectedId(shape.id);
+                  strokeWidth={
+                    isSelected 
+                      ? scaledStrokeWidth * 0.5  // Selected: thinner blue border
+                      : (lockedByOther || isBeingEditedByMe)
+                      ? scaledStrokeWidth  // Locked: thick colored border
+                      : 0
                   }
-                }}
-                stroke={
-                  isSelected 
-                    ? '#0066ff' 
-                    : lockedByOther 
-                    ? '#ff6b6b' 
-                    : undefined
-                }
-                strokeWidth={isSelected || lockedByOther ? 3 : 0}
-                dash={lockedByOther ? [10, 5] : undefined}
-                onDragEnd={(e) => {
+                  dash={(lockedByOther || isBeingEditedByMe) ? [15 / scale, 8 / scale] : undefined}
+                onDragStart={async (e) => {
                   if (lockedByOther) return;
                   
+                  // Start editing session (lock + copy to RTDB)
+                  const success = await startEditingShape(shape.id);
+                  if (success) {
+                    setEditingShapes((prev) => new Set(prev).add(shape.id));
+                  } else {
+                    // Failed to acquire lock, cancel drag
+                    e.target.stopDrag();
+                  }
+                }}
+                onDragMove={(e) => {
+                  if (lockedByOther || !editingShapesRef.current.has(shape.id)) return;
+                  
                   const node = e.target;
-                  // Constrain to canvas boundaries
+                  // Constrain to canvas boundaries during drag
+                  const newX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - node.width()));
+                  const newY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - node.height()));
+                  
+                  node.position({ x: newX, y: newY });
+                  
+                  // Update cursor position to follow the shape (center of shape)
+                  const centerX = newX + node.width() / 2;
+                  const centerY = newY + node.height() / 2;
+                  updateMyCursor(centerX, centerY);
+                  
+                  // Update position in RTDB (temporary) - throttled automatically
+                  updateShapeTemporary(shape.id, { x: newX, y: newY });
+                }}
+                onDragEnd={async (e) => {
+                  if (lockedByOther || !editingShapes.has(shape.id)) return;
+                  
+                  const node = e.target;
+                  // Final position constraint
                   const newX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - node.width()));
                   const newY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - node.height()));
                   
                   node.position({ x: newX, y: newY });
 
-                  // Update shape position in context state
-                  updateShape(shape.id, { x: newX, y: newY });
+                  // Finish editing with final position (commit to Firestore and clear RTDB)
+                  await finishEditingShape(shape.id, {
+                    x: newX,
+                    y: newY,
+                    width: node.width(),
+                    height: node.height()
+                  });
+                  setEditingShapes((prev) => {
+                    const next = new Set(prev);
+                    next.delete(shape.id);
+                    return next;
+                  });
                 }}
-                onTransformEnd={(e) => {
+                onTransformStart={async () => {
                   if (lockedByOther) return;
+                  
+                  // Start editing session (lock + copy to RTDB)
+                  const success = await startEditingShape(shape.id);
+                  if (success) {
+                    setEditingShapes((prev) => new Set(prev).add(shape.id));
+                  }
+                }}
+                onTransform={(e) => {
+                  if (lockedByOther || !editingShapesRef.current.has(shape.id)) return;
+                  
+                  const node = e.target;
+                  const scaleX = node.scaleX();
+                  const scaleY = node.scaleY();
+
+                  const width = Math.max(
+                    MIN_SHAPE_SIZE,
+                    Math.min(node.width() * scaleX, MAX_SHAPE_SIZE),
+                  );
+                  const height = Math.max(
+                    MIN_SHAPE_SIZE,
+                    Math.min(node.height() * scaleY, MAX_SHAPE_SIZE),
+                  );
+
+                  // Update cursor position to follow the shape (center of shape)
+                  const centerX = node.x() + width / 2;
+                  const centerY = node.y() + height / 2;
+                  updateMyCursor(centerX, centerY);
+
+                  // Update RTDB with current transform - throttled automatically
+                  updateShapeTemporary(shape.id, {
+                    x: node.x(),
+                    y: node.y(),
+                    width,
+                    height,
+                  });
+                }}
+                onTransformEnd={async (e) => {
+                  if (lockedByOther || !editingShapes.has(shape.id)) return;
                   
                   const node = e.target;
                   const scaleX = node.scaleX();
@@ -307,14 +510,51 @@ const Canvas = () => {
 
                   node.position({ x: constrainedX, y: constrainedY });
 
-                  updateShape(shape.id, {
+                  // Finish editing with final state (commit to Firestore and clear RTDB)
+                  await finishEditingShape(shape.id, {
                     x: constrainedX,
                     y: constrainedY,
                     width,
-                    height,
+                    height
+                  });
+                  setEditingShapes((prev) => {
+                    const next = new Set(prev);
+                    next.delete(shape.id);
+                    return next;
                   });
                 }}
               />
+              
+              {/* Lock icon - only show for shapes locked by OTHER users, not yourself */}
+              {isLocked && lockOwnerColor && !isBeingEditedByMe && (
+                <Group
+                  x={shape.x + lockIconOffset}
+                  y={shape.y + lockIconOffset}
+                  listening={false}
+                >
+                  {/* White background circle for visibility */}
+                  <Rect
+                    x={0}
+                    y={0}
+                    width={lockIconSize}
+                    height={lockIconSize}
+                    fill="white"
+                    cornerRadius={lockIconSize / 4}
+                    shadowColor="black"
+                    shadowBlur={3 / scale}
+                    shadowOpacity={0.4}
+                  />
+                  
+                  {/* Material Design Lock Icon (padlock) */}
+                  <Path
+                    data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"
+                    fill={lockOwnerColor}
+                    scaleX={lockIconSize / 24}
+                    scaleY={lockIconSize / 24}
+                  />
+                </Group>
+              )}
+            </Group>
             );
           })}
           <Transformer
@@ -332,6 +572,20 @@ const Canvas = () => {
               return newBox;
             }}
           />
+        </Layer>
+        
+        {/* Cursor layer - renders other users' cursors */}
+        <Layer listening={false}>
+          {Object.entries(cursors).map(([userId, cursor]) => (
+            <Cursor
+              key={userId}
+              x={cursor.x}
+              y={cursor.y}
+              color={cursor.color}
+              displayName={cursor.displayName}
+              scale={scale}
+            />
+          ))}
         </Layer>
       </Stage>
       

@@ -4,9 +4,6 @@ import {
   createShape,
   updateShape,
   deleteShape,
-  lockShape,
-  unlockShape,
-  unlockAllUserShapes,
   isShapeLockedByOther,
   getShapeLockOwner,
 } from '../../../src/services/shapes';
@@ -36,38 +33,43 @@ vi.mock('firebase/database', () => ({
 describe('Shape Service', () => {
   describe('isShapeLockedByOther', () => {
     it('should return false if shape is not locked', () => {
-      const shape = { id: 'shape1', lockedBy: null };
+      const locks = {};
+      const shapeId = 'shape1';
       const currentUserId = 'user1';
       
-      expect(isShapeLockedByOther(shape, currentUserId)).toBe(false);
+      expect(isShapeLockedByOther(locks, shapeId, currentUserId)).toBe(false);
     });
 
     it('should return false if shape is locked by current user', () => {
-      const shape = { id: 'shape1', lockedBy: 'user1' };
+      const locks = { shape1: { lockedBy: 'user1', lockedAt: Date.now() } };
+      const shapeId = 'shape1';
       const currentUserId = 'user1';
       
-      expect(isShapeLockedByOther(shape, currentUserId)).toBe(false);
+      expect(isShapeLockedByOther(locks, shapeId, currentUserId)).toBe(false);
     });
 
     it('should return true if shape is locked by another user', () => {
-      const shape = { id: 'shape1', lockedBy: 'user2' };
+      const locks = { shape1: { lockedBy: 'user2', lockedAt: Date.now() } };
+      const shapeId = 'shape1';
       const currentUserId = 'user1';
       
-      expect(isShapeLockedByOther(shape, currentUserId)).toBe(true);
+      expect(isShapeLockedByOther(locks, shapeId, currentUserId)).toBe(true);
     });
   });
 
   describe('getShapeLockOwner', () => {
     it('should return null if shape is not locked', () => {
-      const shape = { id: 'shape1', lockedBy: null };
+      const locks = {};
+      const shapeId = 'shape1';
       
-      expect(getShapeLockOwner(shape)).toBe(null);
+      expect(getShapeLockOwner(locks, shapeId)).toBe(null);
     });
 
     it('should return user id if shape is locked', () => {
-      const shape = { id: 'shape1', lockedBy: 'user1' };
+      const locks = { shape1: { lockedBy: 'user1', lockedAt: Date.now() } };
+      const shapeId = 'shape1';
       
-      expect(getShapeLockOwner(shape)).toBe('user1');
+      expect(getShapeLockOwner(locks, shapeId)).toBe('user1');
     });
   });
 
@@ -94,27 +96,19 @@ describe('Shape Service', () => {
 
   describe('Shape locking', () => {
     it('should prevent locking by another user', () => {
-      const shape = {
-        id: 'shape1',
-        lockedBy: 'user1',
-        x: 100,
-        y: 200,
-      };
+      const locks = { shape1: { lockedBy: 'user1', lockedAt: Date.now() } };
+      const shapeId = 'shape1';
 
       // Verify lock check
-      expect(isShapeLockedByOther(shape, 'user2')).toBe(true);
-      expect(isShapeLockedByOther(shape, 'user1')).toBe(false);
+      expect(isShapeLockedByOther(locks, shapeId, 'user2')).toBe(true);
+      expect(isShapeLockedByOther(locks, shapeId, 'user1')).toBe(false);
     });
 
     it('should allow unlocking by same user', () => {
-      const shape = {
-        id: 'shape1',
-        lockedBy: 'user1',
-        x: 100,
-        y: 200,
-      };
+      const locks = { shape1: { lockedBy: 'user1', lockedAt: Date.now() } };
+      const shapeId = 'shape1';
 
-      expect(getShapeLockOwner(shape)).toBe('user1');
+      expect(getShapeLockOwner(locks, shapeId)).toBe('user1');
     });
   });
 });

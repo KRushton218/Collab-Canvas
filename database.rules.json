@@ -1,0 +1,25 @@
+{
+  "rules": {
+    "sessions": {
+      "$canvasId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "canvas": {
+      "$canvasId": {
+        ".read": "auth != null",
+        "activeEdits": {
+          ".write": "auth != null"
+        },
+        "locks": {
+          ".write": "auth != null"
+        },
+        "userLocks": {
+          ".write": "auth != null"
+        }
+      }
+    }
+  }
+}
+
