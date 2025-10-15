@@ -21,10 +21,11 @@
 - [x] Create shapes (rectangle, circle, line, text)
 - [x] Move shapes (drag)
 - [x] Resize shapes (transform handles)
-- [x] Delete shapes (keyboard)
+- [x] Delete shapes (keyboard, respects text editing mode)
 - [x] Select shapes
 - [x] Shape persistence in Firestore
 - [x] Real-time shape updates
+- [x] Shape rotation (syncs via RTDB, persists to Firestore)
 
 ### Collaboration Features
 - [x] Real-time cursor tracking
@@ -38,13 +39,15 @@
 
 ### UI/UX
 - [x] Modern toolbar with tool selection (persistent tool mode)
-- [x] Right-side Style panel (fill, rotation)
+- [x] Right-side Style panel (fill, rotation, text formatting)
 - [x] Zoom controls (bottom-left)
 - [x] Profile dropdown with logout
 - [x] Expandable presence list
 - [x] Responsive hover effects
 - [x] Smooth animations
 - [x] Consistent design system
+- [x] Hand cursor (grab/grabbing) when holding Space for pan
+- [x] Auto-switch to select tool after text creation
 
 ### Performance
 - [x] O(1) shape operations (one doc per shape)
@@ -70,9 +73,20 @@
 - [ ] Select multiple shapes
 - [ ] Group shapes
 
+### Text Features
+- [x] Text shape creation (click or drag to size)
+- [x] Inline text editing (double-click or immediate on create)
+- [x] Font size control with auto-fit button
+- [x] Text alignment (left/center/right)
+- [x] Text formatting (bold/italic/underline)
+- [x] Font size scales during resize
+- [x] Empty text auto-deletes on cancel
+- [ ] Font family selector
+- [ ] Text wrapping modes
+- [ ] Rich text (mixed formatting within text)
+
 ### Advanced Features (Future)
 - [ ] Freehand drawing
-- [ ] Text editing (double-click to edit)
 - [ ] Layers/z-index control
 - [ ] Undo/redo system
 - [ ] Canvas export (PNG/SVG/JSON)

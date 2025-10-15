@@ -84,4 +84,32 @@ All Firebase operations isolated in service files:
 ### Interaction Rules
 - Space + drag always pans; while held, shapes are non-interactive (no drag/transform)
 - Zoom requires Ctrl/⌘ + scroll to avoid accidental zooming
+- Hand cursor (grab/grabbing) displays when holding Space for visual feedback
+
+### Text Editing Pattern
+**Creation Flow**:
+1. Click text tool → click canvas → empty text shape created
+2. Text editor opens immediately (styled textarea overlay)
+3. User types content
+4. Save (blur/Ctrl+Enter) → persists to Firestore → switches to select tool
+5. Cancel (Esc) or empty → shape auto-deletes
+
+**Editing Flow**:
+1. Double-click text shape → opens inline editor
+2. Textarea matches all formatting (font, alignment, bold, italic, underline)
+3. Delete/Backspace keys edit text (don't delete shape)
+4. Save or cancel → returns to canvas view
+
+**Formatting Storage**:
+- `fontSize`: number (8-512)
+- `fontStyle`: 'normal' | 'bold' | 'italic' | 'bold italic'
+- `textDecoration`: '' | 'underline'
+- `align`: 'left' | 'center' | 'right'
+- All persist to Firestore and sync via RTDB during edits
+
+### Rotation Sync Pattern
+- **Pure rotation** (no scale): Only `rotation` sent to RTDB
+- **Resize**: Sends x, y, width, height, rotation
+- Prevents coordinate "jumps" for remote viewers during rotation
+- Rotation merges from RTDB for live collaboration
 

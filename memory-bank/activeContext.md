@@ -1,13 +1,54 @@
 # Active Context
 
 ## Current Work Focus
-**📚 Documentation Overhaul & Bug Discovery** (October 14, 2025)
+**✨ Text Editing & Formatting Enhancement** (October 15, 2025)
 
-**Recent Completion**: V1.0 Production Deployment  
+**Recent Completion**: Comprehensive text editing system with formatting controls  
 **Live App**: https://collab-canvas-ed2fc.web.app  
-**Current Phase**: Documentation cleanup and planning V1.1.0
+**Current Phase**: Enhanced text UX matching Figma-like behavior
 
 ## Recent Changes (Latest Session)
+
+### Text Editing System ✅ (October 15, 2025)
+Implemented complete text editing workflow with rich formatting controls:
+
+**Core Text Features**:
+1. ✅ **Font Size Control**: Number input with auto-fit button
+   - Intelligent auto-fit algorithm (0.55 char-width, padding-aware)
+   - Scales text proportionally during resize transforms
+   - Range: 8-512px with validation
+   
+2. ✅ **Text Alignment**: Left/Center/Right toggle buttons
+   - Visual feedback with indigo highlighting
+   - Persists across edits and syncs in real-time
+
+3. ✅ **Text Formatting**: Bold, Italic, Underline toggles
+   - Can combine multiple formats (e.g., bold + italic)
+   - Applies to both canvas and edit overlay
+   - Stored in Firestore: `fontStyle` and `textDecoration`
+
+4. ✅ **Inline Text Editing**: Double-click or create with text tool
+   - Creates empty shape → opens editor immediately
+   - Styled textarea matches all formatting
+   - Keyboard shortcuts: Esc to cancel, Ctrl/Cmd+Enter to save
+   - Auto-deletes if empty on save/cancel
+
+5. ✅ **UX Improvements**:
+   - Auto-switch to select tool after creating text
+   - Delete/Backspace work in editor without deleting shape
+   - Hand cursor (grab/grabbing) when holding Space
+   - Custom cursor switches based on pan state
+
+**Technical Improvements**:
+- ✅ Fixed rotation sync: only sends rotation angle to RTDB (not x/y)
+- ✅ Rotation merges correctly for remote viewers
+- ✅ Font size included in RTDB live updates and Firestore commits
+- ✅ Extended TextObject model with `fontStyle` and `textDecoration`
+- ✅ Updated shapes service to persist formatting attributes
+
+**Commit**: `b554fa8` - "feat: Enhanced text editing with formatting controls and improved UX"
+
+## Recent Changes (Previous Sessions)
 
 ### Documentation Restructure ✅ (October 14, 2025)
 Completed major documentation update to transition from task-based to memory-bank workflow:
@@ -111,12 +152,13 @@ Established consistent styling across all components:
 4. **Share**: Distribute live URL for user testing
 
 ### V1.1.0 Planning (Next Minor Release)
-Planned features for next release:
-1. **Circle Shape Rendering**: Add Circle component in Canvas.jsx
-2. **Line/Arrow Shape Rendering**: Add Line/Arrow components
-3. **Text Box Rendering**: Add Text component with editing
-4. **Tool Mode Improvements**: Stay in draw mode after creating shape
-5. **Shape Property Panel**: Edit shape properties post-creation
+Completed features:
+1. ✅ **Text Box Rendering & Editing**: Full text system with formatting
+2. ✅ **Shape Property Panel**: Style panel with fill, rotation, text controls
+
+Remaining planned features:
+1. **Enhanced Shape Types**: Improve circle and line rendering
+2. **Additional Text Features**: Font family selector, text wrapping modes
 
 ### V1.2.0 Planning
 1. **Copy/Paste Shapes**: Keyboard shortcuts for duplication
@@ -157,12 +199,12 @@ Planned features for next release:
    - Impact: Visual confusion, doesn't affect functionality
    - Discovered: October 14, 2025
 
-### Known Limitations (V1.0)
-- Only rectangles render (Circle/Line/Text buttons exist but don't work)
+### Known Limitations
 - Desktop-only (mobile not optimized)
 - No undo/redo yet
 - No multi-select yet
 - No export functionality yet
+- Text wrapping is basic (Konva default behavior)
 
 ## Documentation Updates
 - ✅ CHANGELOG.md created with semantic versioning guide
