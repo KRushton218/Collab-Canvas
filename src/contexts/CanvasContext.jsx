@@ -201,10 +201,16 @@ export const CanvasProvider = ({ children }) => {
     }
 
     try {
-      // Finish editing any previously selected shape
-      if (selectedId && selectedId !== id) {
-        await finishEditingShape(selectedId);
-      }
+      // Release any locks for shapes owned by current user IMMEDIATELY
+      // This prevents multiple lock borders when editing shapes in rapid succession
+      const myActiveLocks = Object.entries(locks).filter(
+        ([shapeId, lock]) => lock.lockedBy === currentUser.uid && shapeId !== id
+      );
+      
+      // Release locks in parallel without waiting for Firestore delays
+      myActiveLocks.forEach(([shapeId]) => {
+        realtimeShapes.finishEditingShape(shapeId, currentUser.uid).catch(() => {});
+      });
 
       // Get the current shape state from Firestore
       const shape = firestoreShapes.find((s) => s.id === id);
