@@ -12,6 +12,7 @@ const ShapeNode = ({
   isBeingEditedByMe,
   lockOwnerColor,
   onSelect,
+  onDoubleClick,
   onStartEdit,
   onDragMove,
   onDragEnd,
@@ -49,6 +50,8 @@ const ShapeNode = ({
     draggable: !isLockedByOther && !isPanning,
     onClick: onSelect,
     onTap: onSelect,
+    onDblClick: onDoubleClick,
+    onDblTap: onDoubleClick,
     stroke: strokeColor,
     strokeWidth,
     dash,
@@ -121,9 +124,12 @@ const ShapeNode = ({
           {...commonProps}
           width={shape.width}
           height={shape.height}
-          text={shape.text || 'Text'}
+          text={shape.text || ''}
+          placeholder="Double-click to edit"
           fontSize={shape.fontSize || 18}
           fontFamily={shape.fontFamily || 'Inter, system-ui'}
+          fontStyle={shape.fontStyle || 'normal'}
+          textDecoration={shape.textDecoration || ''}
           fill={shape.fill || '#111827'}
           align={shape.align || 'left'}
           onDragStart={onStartEdit}

@@ -59,6 +59,11 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
   
+  // Text editing state
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [editingTextValue, setEditingTextValue] = useState('');
+  const textInputRef = useRef(null);
+  
   // Keep ref in sync with state
   useEffect(() => {
     editingShapesRef.current = editingShapes;
@@ -86,6 +91,48 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       }
     };
   }, []);
+  
+  // Focus text input when editing starts
+  useEffect(() => {
+    if (editingTextId && textInputRef.current) {
+      textInputRef.current.focus();
+      textInputRef.current.select();
+    }
+  }, [editingTextId]);
+  
+  // Handle text edit completion
+  const finishTextEdit = async () => {
+    if (editingTextId) {
+      const trimmedText = (editingTextValue || '').trim();
+      if (trimmedText) {
+        // Save the text if it's not empty
+        await updateShape(editingTextId, { text: editingTextValue });
+      } else {
+        // Delete the shape if text is empty (user didn't enter anything)
+        await deleteShape(editingTextId);
+      }
+      setEditingTextId(null);
+      setEditingTextValue('');
+      // Switch back to select tool after creating text
+      if (activeTool === 'text') {
+        setActiveTool('select');
+      }
+    }
+  };
+  
+  // Handle text edit cancel
+  const cancelTextEdit = async () => {
+    if (editingTextId) {
+      // Check if the shape has existing text or was just created
+      const shape = shapes.find(s => s.id === editingTextId);
+      if (shape && !shape.text) {
+        // If no text exists, delete the shape (was a new creation that was cancelled)
+        await deleteShape(editingTextId);
+      }
+    }
+    setEditingTextId(null);
+    setEditingTextValue('');
+  };
   
   // Cursor tracking and online users for lock colors
   const { cursors, updateMyCursor } = useCursors(currentUser?.uid, stageRef);
@@ -181,7 +228,8 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   // Handle keyboard delete
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+      // Don't delete shape if we're editing text - let the textarea handle the key
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && !editingTextId) {
         e.preventDefault();
         deleteShape(selectedId);
       }
@@ -189,7 +237,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, deleteShape]);
+  }, [selectedId, editingTextId, deleteShape]);
 
   // Cleanup: finish any active editing sessions on unmount
   useEffect(() => {
@@ -306,17 +354,25 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     if (!stage) return;
 
     const container = stage.container();
-    container.style.cursor = isPanning ? 'grab' : 'default';
+    // Show hand cursor when holding Space (pan mode)
+    if (isPanning) {
+      container.style.cursor = 'grab';
+    } else {
+      // Reset to default when not panning
+      container.style.cursor = '';
+    }
 
     return () => {
-      container.style.cursor = 'default';
+      container.style.cursor = '';
     };
   }, [isPanning, stageRef]);
 
   const handleDragStart = () => {
-    const stage = stageRef.current;
-    if (stage) {
-      stage.container().style.cursor = 'grabbing';
+    if (isPanning) {
+      const stage = stageRef.current;
+      if (stage) {
+        stage.container().style.cursor = 'grabbing';
+      }
     }
   };
 
@@ -435,8 +491,16 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
           const obj = new LineObject({ points: [start.x, start.y, start.x + size, start.y + size] });
           await addShape(obj.toRecord());
         } else if (activeTool === 'text') {
-          const obj = new TextObject({ x, y, width: 160, height: 40, fill: '#111827', text: 'Text' });
-          await addShape(obj.toRecord());
+          const obj = new TextObject({ x, y, width: 160, height: 40, fill: '#111827', text: '' });
+          const newShapeId = await addShape(obj.toRecord());
+          // Immediately open text editor for the new shape
+          if (newShapeId) {
+            // Wait a brief moment for the shape to be added to state
+            setTimeout(() => {
+              setEditingTextId(newShapeId);
+              setEditingTextValue('');
+            }, 50);
+          }
         }
       } else {
         // Drag: use draft
@@ -455,8 +519,16 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
           await addShape(obj.toRecord());
         } else if (creationDraft.type === 'text') {
           const { x, y, width, height } = creationDraft;
-          const obj = new TextObject({ x, y, width, height, fill: '#111827', text: 'Text' });
-          await addShape(obj.toRecord());
+          const obj = new TextObject({ x, y, width, height, fill: '#111827', text: '' });
+          const newShapeId = await addShape(obj.toRecord());
+          // Immediately open text editor for the new shape
+          if (newShapeId) {
+            // Wait a brief moment for the shape to be added to state
+            setTimeout(() => {
+              setEditingTextId(newShapeId);
+              setEditingTextValue('');
+            }, 50);
+          }
         }
       }
     } finally {
@@ -483,7 +555,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       {/* Custom cursor style with outline for current user */}
       <style>{`
         canvas {
-          cursor: url('${customCursorSVG}') 1 1, auto !important;
+          cursor: ${isPanning ? 'grab' : `url('${customCursorSVG}') 1 1, auto`} !important;
         }
       `}</style>
       
@@ -573,6 +645,14 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
                 setSelectedId(shape.id);
               }
             };
+            
+            const onDoubleClick = () => {
+              if (shape.type === 'text' && !lockedByOther && !isPanning) {
+                setEditingTextId(shape.id);
+                setEditingTextValue(shape.text || 'Text');
+                // Focus will happen in useEffect
+              }
+            };
 
             const onStartEdit = async (e) => {
               if (lockedByOther || isPanning) return;
@@ -636,9 +716,18 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             const onTransform = (e) => {
               if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
               const node = e.target;
-              if (shape.type === 'circle') {
-                const scaleX = node.scaleX?.() ?? 1;
-                const scaleY = node.scaleY?.() ?? 1;
+              const scaleX = node.scaleX?.() ?? 1;
+              const scaleY = node.scaleY?.() ?? 1;
+              const rotation = node.rotation?.() ?? 0;
+              
+              // Detect if this is a pure rotation (no scale change)
+              const isPureRotation = Math.abs(scaleX - 1) < 0.01 && Math.abs(scaleY - 1) < 0.01;
+              
+              if (isPureRotation) {
+                // Pure rotation: only send rotation, don't update x/y
+                updateMyCursor(node.x() + (node.width?.() ?? shape.width) / 2, node.y() + (node.height?.() ?? shape.height) / 2);
+                updateShapeTemporary(shape.id, { rotation });
+              } else if (shape.type === 'circle') {
                 const currDiameterX = (node.width?.() ?? Math.min(shape.width, shape.height)) * scaleX;
                 const currDiameterY = (node.height?.() ?? Math.min(shape.width, shape.height)) * scaleY;
                 const diameter = Math.max(MIN_SHAPE_SIZE, Math.min(Math.min(currDiameterX, currDiameterY), MAX_SHAPE_SIZE));
@@ -646,16 +735,26 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
                 const topLeftX = node.x() - radius;
                 const topLeftY = node.y() - radius;
                 updateMyCursor(node.x(), node.y());
-                updateShapeTemporary(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter });
+                updateShapeTemporary(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter, rotation });
+              } else if (shape.type === 'text') {
+                const baseWidth = node.width?.() ?? shape.width;
+                const baseHeight = node.height?.() ?? shape.height;
+                const width = Math.max(MIN_SHAPE_SIZE, Math.min(baseWidth * scaleX, MAX_SHAPE_SIZE));
+                const height = Math.max(MIN_SHAPE_SIZE, Math.min(baseHeight * scaleY, MAX_SHAPE_SIZE));
+                const scaleFactor = Math.max(scaleX, scaleY);
+                const currentFont = shape.fontSize || 18;
+                const nextFont = Math.max(8, Math.min(512, Math.round(currentFont * scaleFactor)));
+                const centerX = node.x() + width / 2;
+                const centerY = node.y() + height / 2;
+                updateMyCursor(centerX, centerY);
+                updateShapeTemporary(shape.id, { x: node.x(), y: node.y(), width, height, fontSize: nextFont, rotation });
               } else {
-                const scaleX = node.scaleX?.() ?? 1;
-                const scaleY = node.scaleY?.() ?? 1;
                 const width = Math.max(MIN_SHAPE_SIZE, Math.min((node.width?.() ?? shape.width) * scaleX, MAX_SHAPE_SIZE));
                 const height = Math.max(MIN_SHAPE_SIZE, Math.min((node.height?.() ?? shape.height) * scaleY, MAX_SHAPE_SIZE));
                 const centerX = node.x() + width / 2;
                 const centerY = node.y() + height / 2;
                 updateMyCursor(centerX, centerY);
-                updateShapeTemporary(shape.id, { x: node.x(), y: node.y(), width, height });
+                updateShapeTemporary(shape.id, { x: node.x(), y: node.y(), width, height, rotation });
               }
             };
 
@@ -678,6 +777,23 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
                 topLeftY = Math.max(0, Math.min(topLeftY, CANVAS_HEIGHT - diameter));
                 node.position({ x: topLeftX + radius, y: topLeftY + radius });
                 await finishEditingShape(shape.id, { x: topLeftX, y: topLeftY, width: diameter, height: diameter, rotation: node.rotation?.() ?? 0 });
+              } else if (shape.type === 'text') {
+                const baseWidth = node.width?.() ?? shape.width;
+                const baseHeight = node.height?.() ?? shape.height;
+                const scaleX = node.scaleX?.() ?? 1;
+                const scaleY = node.scaleY?.() ?? 1;
+                const width = Math.max(MIN_SHAPE_SIZE, Math.min(baseWidth * scaleX, MAX_SHAPE_SIZE));
+                const height = Math.max(MIN_SHAPE_SIZE, Math.min(baseHeight * scaleY, MAX_SHAPE_SIZE));
+                const scaleFactor = Math.max(scaleX, scaleY);
+                const currentFont = shape.fontSize || 18;
+                const nextFont = Math.max(8, Math.min(512, Math.round(currentFont * scaleFactor)));
+                node.scaleX?.(1);
+                node.scaleY?.(1);
+                node.size?.({ width, height });
+                const constrainedX = Math.max(0, Math.min(node.x(), CANVAS_WIDTH - width));
+                const constrainedY = Math.max(0, Math.min(node.y(), CANVAS_HEIGHT - height));
+                node.position({ x: constrainedX, y: constrainedY });
+                await finishEditingShape(shape.id, { x: constrainedX, y: constrainedY, width, height, rotation: node.rotation?.() ?? 0, fontSize: nextFont });
               } else {
                 const scaleX = node.scaleX?.() ?? 1;
                 const scaleY = node.scaleY?.() ?? 1;
@@ -705,6 +821,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
                   isBeingEditedByMe={isBeingEditedByMe}
                   lockOwnerColor={lockOwnerColor}
                   onSelect={onSelect}
+                  onDoubleClick={onDoubleClick}
                   onStartEdit={onStartEdit}
                   onDragMove={onDragMove}
                   onDragEnd={onDragEnd}
@@ -783,6 +900,61 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       <CanvasToolbar />
       <StylePanel />
       <CanvasHelpOverlay />
+      
+      {/* Text editing overlay */}
+      {editingTextId && (() => {
+        const shape = shapes.find(s => s.id === editingTextId);
+        if (!shape) return null;
+        
+        const stage = stageRef.current;
+        if (!stage) return null;
+        
+        // Calculate screen position from canvas coordinates
+        const stagePos = stage.container().getBoundingClientRect();
+        const screenX = stagePos.left + (shape.x + position.x) * scale;
+        const screenY = stagePos.top + (shape.y + position.y) * scale;
+        const screenWidth = shape.width * scale;
+        const screenHeight = shape.height * scale;
+        
+        return (
+          <textarea
+            ref={textInputRef}
+            value={editingTextValue}
+            onChange={(e) => setEditingTextValue(e.target.value)}
+            onBlur={finishTextEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                cancelTextEdit();
+              } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                finishTextEdit();
+              }
+            }}
+            style={{
+              position: 'fixed',
+              left: `${screenX}px`,
+              top: `${screenY}px`,
+              width: `${screenWidth}px`,
+              height: `${screenHeight}px`,
+              fontSize: `${(shape.fontSize || 18) * scale}px`,
+              fontFamily: shape.fontFamily || 'Inter, system-ui',
+              fontStyle: (shape.fontStyle || 'normal').includes('italic') ? 'italic' : 'normal',
+              fontWeight: (shape.fontStyle || 'normal').includes('bold') ? 'bold' : 'normal',
+              textDecoration: shape.textDecoration || '',
+              color: shape.fill || '#111827',
+              textAlign: shape.align || 'left',
+              border: '2px solid #0066ff',
+              borderRadius: '4px',
+              padding: '4px',
+              backgroundColor: 'white',
+              resize: 'none',
+              outline: 'none',
+              zIndex: 10001,
+              transform: `rotate(${shape.rotation || 0}deg)`,
+              transformOrigin: 'top left',
+            }}
+          />
+        );
+      })()}
       
       {/* Toast notification */}
       {toast && (

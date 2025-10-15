@@ -73,12 +73,14 @@ export class LineObject extends CanvasObject {
 }
 
 export class TextObject extends CanvasObject {
-  constructor({ id = null, x = 0, y = 0, width = 160, height = 40, fill = '#111827', text = 'Text', fontSize = 18, fontFamily = 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif', align = 'left' }) {
+  constructor({ id = null, x = 0, y = 0, width = 160, height = 40, fill = '#111827', text = 'Text', fontSize = 18, fontFamily = 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif', align = 'left', fontStyle = 'normal', textDecoration = '' }) {
     super({ id, type: 'text', x, y, width, height, fill });
     this.text = text;
     this.fontSize = fontSize;
     this.fontFamily = fontFamily;
     this.align = align;
+    this.fontStyle = fontStyle; // 'normal', 'bold', 'italic', 'bold italic'
+    this.textDecoration = textDecoration; // '', 'underline', 'line-through'
   }
 
   toRecord(createdBy = null) {
@@ -88,6 +90,8 @@ export class TextObject extends CanvasObject {
       fontSize: this.fontSize,
       fontFamily: this.fontFamily,
       align: this.align,
+      fontStyle: this.fontStyle,
+      textDecoration: this.textDecoration,
     };
   }
 }

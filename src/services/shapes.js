@@ -136,6 +136,8 @@ export const createShape = async (shapeData) => {
     if (shapeData.fontSize !== undefined) extended.fontSize = shapeData.fontSize;
     if (shapeData.fontFamily !== undefined) extended.fontFamily = shapeData.fontFamily;
     if (shapeData.align !== undefined) extended.align = shapeData.align;
+    if (shapeData.fontStyle !== undefined) extended.fontStyle = shapeData.fontStyle;
+    if (shapeData.textDecoration !== undefined) extended.textDecoration = shapeData.textDecoration;
 
     const newShape = { ...baseShape, ...extended };
 

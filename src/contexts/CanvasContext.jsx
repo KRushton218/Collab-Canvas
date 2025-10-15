@@ -113,6 +113,12 @@ export const CanvasProvider = ({ children }) => {
           y: activeEdit.y !== undefined ? activeEdit.y : shape.y,
           width: activeEdit.width !== undefined ? activeEdit.width : shape.width,
           height: activeEdit.height !== undefined ? activeEdit.height : shape.height,
+          rotation: activeEdit.rotation !== undefined ? activeEdit.rotation : shape.rotation,
+          // Show live font size changes for text shapes
+          fontSize:
+            activeEdit.fontSize !== undefined
+              ? activeEdit.fontSize
+              : shape.fontSize,
           lockedBy: activeEdit.lockedBy || null,
         };
       }
@@ -255,12 +261,20 @@ export const CanvasProvider = ({ children }) => {
         await realtimeShapes.updateEditingShape(id, stateToCommit, true);
         
         // Commit to Firestore (persistent storage) - run in parallel
-        const firestorePromise = shapeService.updateShape(id, {
+        const updatePayload = {
           x: stateToCommit.x,
           y: stateToCommit.y,
           width: stateToCommit.width,
           height: stateToCommit.height,
-        });
+        };
+        if (stateToCommit.rotation !== undefined) {
+          updatePayload.rotation = stateToCommit.rotation;
+        }
+        if (stateToCommit.fontSize !== undefined) {
+          updatePayload.fontSize = stateToCommit.fontSize;
+        }
+
+        const firestorePromise = shapeService.updateShape(id, updatePayload);
         
         // Wait longer to ensure RTDB update is visible to other users
         // AND give Firestore time to propagate before clearing RTDB
