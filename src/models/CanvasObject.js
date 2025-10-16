@@ -4,7 +4,7 @@
 // components.
 
 export class CanvasObject {
-  constructor({ id = null, type, x = 0, y = 0, width = 0, height = 0, fill = '#cccccc', rotation = 0, stroke = '#e5e7eb', strokeWidth = 1 }) {
+  constructor({ id = null, type, x = 0, y = 0, width = 0, height = 0, fill = '#cccccc', rotation = 0, stroke = '#e5e7eb', strokeWidth = 1, zIndex = null }) {
     this.id = id;
     this.type = type;
     this.x = x;
@@ -15,6 +15,7 @@ export class CanvasObject {
     this.rotation = rotation;
     this.stroke = stroke;
     this.strokeWidth = strokeWidth;
+    this.zIndex = zIndex ?? Date.now(); // Default to creation timestamp
   }
 
   toRecord(createdBy = null) {
@@ -29,14 +30,15 @@ export class CanvasObject {
       rotation: this.rotation,
       stroke: this.stroke,
       strokeWidth: this.strokeWidth,
+      zIndex: this.zIndex,
       createdBy,
     };
   }
 }
 
 export class RectangleObject extends CanvasObject {
-  constructor({ id = null, x = 0, y = 0, width = 100, height = 100, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0, cornerRadius = 0 }) {
-    super({ id, type: 'rectangle', x, y, width, height, fill, rotation, stroke: stroke ?? '#e5e7eb', strokeWidth: strokeWidth ?? 1 });
+  constructor({ id = null, x = 0, y = 0, width = 100, height = 100, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0, cornerRadius = 0, zIndex = null }) {
+    super({ id, type: 'rectangle', x, y, width, height, fill, rotation, stroke: stroke ?? '#e5e7eb', strokeWidth: strokeWidth ?? 1, zIndex });
     this.cornerRadius = cornerRadius;
   }
 
@@ -50,13 +52,13 @@ export class RectangleObject extends CanvasObject {
 
 export class CircleObject extends CanvasObject {
   // We model circles as width/height of the bounding box for easier transforms
-  constructor({ id = null, x = 0, y = 0, width = 100, height = 100, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0 }) {
-    super({ id, type: 'circle', x, y, width, height, fill, rotation, stroke: stroke ?? '#e5e7eb', strokeWidth: strokeWidth ?? 1 });
+  constructor({ id = null, x = 0, y = 0, width = 100, height = 100, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0, zIndex = null }) {
+    super({ id, type: 'circle', x, y, width, height, fill, rotation, stroke: stroke ?? '#e5e7eb', strokeWidth: strokeWidth ?? 1, zIndex });
   }
 }
 
 export class LineObject extends CanvasObject {
-  constructor({ id = null, points = [0, 0, 100, 100], fill = 'transparent', stroke = '#374151', strokeWidth = 2 }) {
+  constructor({ id = null, points = [0, 0, 100, 100], fill = 'transparent', stroke = '#374151', strokeWidth = 2, zIndex = null }) {
     // Normalize so that points are relative to (x, y) and width/height reflect the bounding box
     const x1 = points[0];
     const y1 = points[1];
@@ -73,7 +75,7 @@ export class LineObject extends CanvasObject {
 
     // Store node position at top-left of the line's bounding box,
     // and translate points to local coordinates relative to (0,0)
-    super({ id, type: 'line', x: minX, y: minY, width, height, fill, rotation: 0, stroke, strokeWidth });
+    super({ id, type: 'line', x: minX, y: minY, width, height, fill, rotation: 0, stroke, strokeWidth, zIndex });
     this.points = [x1 - minX, y1 - minY, x2 - minX, y2 - minY];
   }
 
@@ -86,9 +88,9 @@ export class LineObject extends CanvasObject {
 }
 
 export class TextObject extends CanvasObject {
-  constructor({ id = null, x = 0, y = 0, width = 160, height = 40, fill = '#111827', text = 'Text', fontSize = 18, fontFamily = 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif', align = 'left', fontStyle = 'normal', textDecoration = '' }) {
+  constructor({ id = null, x = 0, y = 0, width = 160, height = 40, fill = '#111827', text = 'Text', fontSize = 18, fontFamily = 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif', align = 'left', fontStyle = 'normal', textDecoration = '', zIndex = null }) {
     // Text defaults avoid glyph strokes; box border is handled in renderer via selection/locks
-    super({ id, type: 'text', x, y, width, height, fill, stroke: null, strokeWidth: 0 });
+    super({ id, type: 'text', x, y, width, height, fill, stroke: null, strokeWidth: 0, zIndex });
     this.text = text;
     this.fontSize = fontSize;
     this.fontFamily = fontFamily;
@@ -111,8 +113,8 @@ export class TextObject extends CanvasObject {
 }
 
 export class GroupObject extends CanvasObject {
-  constructor({ id = null, children = [] }) {
-    super({ id, type: 'group', x: 0, y: 0, width: 0, height: 0, fill: 'transparent' });
+  constructor({ id = null, children = [], zIndex = null }) {
+    super({ id, type: 'group', x: 0, y: 0, width: 0, height: 0, fill: 'transparent', zIndex });
     this.children = children; // array of CanvasObject
   }
 

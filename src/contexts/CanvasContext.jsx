@@ -1,5 +1,7 @@
 import { createContext, useState, useRef, useEffect, useContext, useMemo } from 'react';
-import { MIN_ZOOM, MAX_ZOOM, INITIAL_CANVAS_X, INITIAL_CANVAS_Y } from '../utils/constants';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import { CANVAS_ID, MIN_ZOOM, MAX_ZOOM, INITIAL_CANVAS_X, INITIAL_CANVAS_Y } from '../utils/constants';
 import { AuthContext } from './AuthContext';
 import * as shapeService from '../services/shapes';
 import * as realtimeShapes from '../services/realtimeShapes';
@@ -99,7 +101,7 @@ export const CanvasProvider = ({ children }) => {
 
   // Merge Firestore shapes with RTDB active edits using useMemo
   // This prevents unnecessary re-renders and only recomputes when dependencies actually change
-  const shapes = useMemo(() => {
+  const mergedShapes = useMemo(() => {
     return firestoreShapes.map((shape) => {
       const activeEdit = activeEdits[shape.id];
       const lock = locks[shape.id];
@@ -149,6 +151,15 @@ export const CanvasProvider = ({ children }) => {
       };
     });
   }, [firestoreShapes, activeEdits, locks, currentUser]);
+  
+  // Sort shapes by zIndex (ascending = bottom to top rendering order)
+  const shapes = useMemo(() => {
+    return [...mergedShapes].sort((a, b) => {
+      const aZ = a.zIndex ?? 0;
+      const bZ = b.zIndex ?? 0;
+      return aZ - bZ;
+    });
+  }, [mergedShapes]);
 
   // Set up disconnect handler to cleanup RTDB data when user leaves
   useEffect(() => {
@@ -170,10 +181,17 @@ export const CanvasProvider = ({ children }) => {
 
     try {
       // Include user ID in shape data
-      const newShapeId = await shapeService.createShape({
+      const fullShapeData = {
         ...shapeData,
         createdBy: currentUser.uid,
-      });
+      };
+      const newShapeId = await shapeService.createShape(fullShapeData);
+      
+      // Record in undo history with complete shape data (including assigned ID)
+      if (newShapeId) {
+        recordEdit(newShapeId, null, { ...fullShapeData, id: newShapeId }, 'CREATE');
+      }
+      
       return newShapeId;
     } catch (error) {
       console.error('Error adding shape:', error);
@@ -189,7 +207,22 @@ export const CanvasProvider = ({ children }) => {
     }
 
     try {
+      // Get current state before updating (for undo)
+      const shapeBefore = firestoreShapes.find(s => s.id === id);
+      
       await shapeService.updateShape(id, updates);
+      
+      // Record in undo history (only track significant changes)
+      if (shapeBefore) {
+        // Extract only the changed fields for cleaner history
+        const beforeState = {};
+        const afterState = {};
+        for (const key in updates) {
+          beforeState[key] = shapeBefore[key];
+          afterState[key] = updates[key];
+        }
+        recordEdit(id, beforeState, afterState, 'UPDATE');
+      }
     } catch (error) {
       console.error('Error updating shape:', error);
     }
@@ -439,7 +472,16 @@ export const CanvasProvider = ({ children }) => {
         return;
       }
 
+      // Get shape state before deleting (for undo)
+      const shapeBefore = firestoreShapes.find(s => s.id === id);
+      
       await shapeService.deleteShape(id);
+      
+      // Record in undo history
+      if (shapeBefore) {
+        recordEdit(id, shapeBefore, null, 'DELETE');
+      }
+      
       if (selectedIds.has(id)) {
         const newSelection = new Set(selectedIds);
         newSelection.delete(id);
@@ -620,6 +662,386 @@ export const CanvasProvider = ({ children }) => {
     });
   };
 
+  // ========== UNDO/REDO SYSTEM (Server-State Based) ==========
+  // Track recent edits with their "before" state from server
+  const [editHistory, setEditHistory] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const MAX_HISTORY = 50;
+  const isUndoRedoOperationRef = useRef(false); // Flag to prevent recording undo/redo actions
+  
+  const canUndo = editHistory.length > 0;
+  const canRedo = redoStack.length > 0;
+  
+  // Record an edit (called when user modifies a shape)
+  const recordEdit = (shapeId, beforeState, afterState, action) => {
+    // Don't record if this is an undo/redo operation
+    if (isUndoRedoOperationRef.current) return;
+    
+    const edit = {
+      id: `edit-${Date.now()}-${Math.random()}`,
+      timestamp: Date.now(),
+      userId: currentUser?.uid,
+      action, // 'CREATE', 'DELETE', 'UPDATE'
+      shapeId,
+      beforeState,
+      afterState,
+    };
+    
+    setEditHistory(prev => {
+      const newHistory = [...prev, edit];
+      // Limit history size
+      if (newHistory.length > MAX_HISTORY) {
+        newHistory.shift();
+      }
+      return newHistory;
+    });
+    
+    // Clear redo stack when new edit is made
+    setRedoStack([]);
+    
+    console.log('[History] Recorded', action, 'for shape', shapeId);
+  };
+  
+  const undo = async () => {
+    if (!canUndo) return;
+    
+    const lastEdit = editHistory[editHistory.length - 1];
+    console.log('[Undo] Reverting', lastEdit.action, 'for shape', lastEdit.shapeId);
+    
+    // Set flag to prevent recording this operation
+    isUndoRedoOperationRef.current = true;
+    
+    try {
+      if (lastEdit.action === 'CREATE') {
+        // Undo create = delete the shape
+        // Check if shape still exists first
+        const shapeExists = firestoreShapes.find(s => s.id === lastEdit.shapeId);
+        if (shapeExists) {
+          await shapeService.deleteShape(lastEdit.shapeId);
+          // Also clear from selection if selected
+          if (selectedIds.has(lastEdit.shapeId)) {
+            const newSelection = new Set(selectedIds);
+            newSelection.delete(lastEdit.shapeId);
+            setSelectedIds(newSelection);
+          }
+        } else {
+          console.warn('[Undo] Shape already deleted by another user:', lastEdit.shapeId);
+        }
+      } else if (lastEdit.action === 'DELETE') {
+        // Undo delete = recreate the shape
+        // Check if a shape with this ID already exists (someone else might have recreated it)
+        const shapeExists = firestoreShapes.find(s => s.id === lastEdit.shapeId);
+        if (shapeExists) {
+          console.warn('[Undo] Cannot undo delete - shape already recreated by another user:', lastEdit.shapeId);
+          // Skip this undo but still move it to redo stack for consistency
+        } else {
+          // Safe to recreate - use setDoc with merge to handle edge cases
+          const { id, updatedAt, lockedBy, ...shapeData } = lastEdit.beforeState;
+          
+          // Use setDoc instead of createShape to have more control
+          const shapeRef = doc(db, 'shapes', lastEdit.shapeId);
+          await setDoc(shapeRef, {
+            ...shapeData,
+            id: lastEdit.shapeId,
+            canvasId: CANVAS_ID,
+            createdAt: lastEdit.beforeState.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdBy: lastEdit.beforeState.createdBy || currentUser.uid,
+          });
+          
+          console.log('[Undo] Shape recreated with ID:', lastEdit.shapeId);
+          console.log('[Undo] Waiting for Firestore sync (500ms)...');
+          
+          // CRITICAL: Wait for Firestore to sync to all clients before considering complete
+          // This prevents ghost shapes and ensures shape appears for all users
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } else if (lastEdit.action === 'UPDATE') {
+        // Undo update = restore previous state
+        // Check if shape still exists
+        const shapeExists = firestoreShapes.find(s => s.id === lastEdit.shapeId);
+        if (shapeExists) {
+          await shapeService.updateShape(lastEdit.shapeId, lastEdit.beforeState);
+        } else {
+          console.warn('[Undo] Cannot undo update - shape was deleted:', lastEdit.shapeId);
+        }
+      }
+      
+      // Move from history to redo stack
+      setEditHistory(prev => prev.slice(0, -1));
+      setRedoStack(prev => [...prev, lastEdit]);
+    } catch (error) {
+      console.error('[Undo] Failed:', error);
+      // Don't crash - just log and continue
+      // Still move edit to redo stack so user can try again
+      setEditHistory(prev => prev.slice(0, -1));
+      setRedoStack(prev => [...prev, lastEdit]);
+    } finally {
+      // Clear flag
+      isUndoRedoOperationRef.current = false;
+    }
+  };
+  
+  const redo = async () => {
+    if (!canRedo) return;
+    
+    const lastUndo = redoStack[redoStack.length - 1];
+    console.log('[Redo] Re-applying', lastUndo.action, 'for shape', lastUndo.shapeId);
+    
+    // Set flag to prevent recording this operation
+    isUndoRedoOperationRef.current = true;
+    
+    try {
+      if (lastUndo.action === 'CREATE') {
+        // Redo create = recreate the shape
+        // Check if shape already exists
+        const shapeExists = firestoreShapes.find(s => s.id === lastUndo.shapeId);
+        if (shapeExists) {
+          console.warn('[Redo] Shape already exists:', lastUndo.shapeId);
+        } else {
+          // Use setDoc for full control
+          const { id, updatedAt, lockedBy, ...shapeData } = lastUndo.afterState;
+          const shapeRef = doc(db, 'shapes', lastUndo.shapeId);
+          await setDoc(shapeRef, {
+            ...shapeData,
+            id: lastUndo.shapeId,
+            canvasId: CANVAS_ID,
+            createdAt: lastUndo.afterState.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdBy: lastUndo.afterState.createdBy || currentUser.uid,
+          });
+          
+          console.log('[Redo] Shape recreated, waiting for sync...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } else if (lastUndo.action === 'DELETE') {
+        // Redo delete = delete again
+        const shapeExists = firestoreShapes.find(s => s.id === lastUndo.shapeId);
+        if (shapeExists) {
+          await shapeService.deleteShape(lastUndo.shapeId);
+          // Also clear from selection if selected
+          if (selectedIds.has(lastUndo.shapeId)) {
+            const newSelection = new Set(selectedIds);
+            newSelection.delete(lastUndo.shapeId);
+            setSelectedIds(newSelection);
+          }
+        } else {
+          console.warn('[Redo] Shape already deleted:', lastUndo.shapeId);
+        }
+      } else if (lastUndo.action === 'UPDATE') {
+        // Redo update = apply the change again
+        const shapeExists = firestoreShapes.find(s => s.id === lastUndo.shapeId);
+        if (shapeExists) {
+          await shapeService.updateShape(lastUndo.shapeId, lastUndo.afterState);
+        } else {
+          console.warn('[Redo] Cannot redo update - shape was deleted:', lastUndo.shapeId);
+        }
+      }
+      
+      // Move from redo stack back to history
+      setRedoStack(prev => prev.slice(0, -1));
+      setEditHistory(prev => [...prev, lastUndo]);
+    } catch (error) {
+      console.error('[Redo] Failed:', error);
+      // Don't crash - just log and continue
+      setRedoStack(prev => prev.slice(0, -1));
+      setEditHistory(prev => [...prev, lastUndo]);
+    } finally {
+      // Clear flag
+      isUndoRedoOperationRef.current = false;
+    }
+  };
+
+  // ========== CLIPBOARD SYSTEM ==========
+  const [clipboard, setClipboard] = useState(null);
+  
+  const copySelected = () => {
+    if (selectedIds.size === 0) return;
+    const selectedShapes = firestoreShapes.filter(s => selectedIds.has(s.id));
+    setClipboard(selectedShapes);
+    console.log('[Copy] Copied', selectedShapes.length, 'shapes to clipboard');
+  };
+  
+  const pasteFromClipboard = async () => {
+    if (!clipboard || clipboard.length === 0) return;
+    
+    console.log('[Paste] Pasting', clipboard.length, 'shapes');
+    
+    // Calculate visible viewport bounds
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Get canvas coordinates for viewport center
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const viewportCenter = transform.point({ x: viewportWidth / 2, y: viewportHeight / 2 });
+    
+    // Calculate bounding box of clipboard shapes
+    if (clipboard.length > 0) {
+      const xs = clipboard.map(s => s.x);
+      const ys = clipboard.map(s => s.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      
+      // Calculate offset to center clipboard content at viewport center
+      const offsetX = viewportCenter.x - minX - 50; // Small offset so not perfectly centered
+      const offsetY = viewportCenter.y - minY - 50;
+      
+      const newIds = [];
+      
+      for (const shape of clipboard) {
+        const { id, createdAt, updatedAt, createdBy, lockedBy, ...shapeData } = shape;
+        const newShape = {
+          ...shapeData,
+          x: shapeData.x + offsetX,
+          y: shapeData.y + offsetY,
+        };
+        const newId = await addShape(newShape);
+        if (newId) newIds.push(newId);
+      }
+      
+      // Select the newly pasted shapes
+      if (newIds.length > 0) {
+        setTimeout(() => selectMultiple(newIds), 100);
+      }
+    }
+  };
+  
+  const duplicateSelected = async () => {
+    if (selectedIds.size === 0) return;
+    
+    const selectedShapes = firestoreShapes.filter(s => selectedIds.has(s.id));
+    console.log('[Duplicate] Duplicating', selectedShapes.length, 'shapes');
+    
+    // Smart offset: 20px, but ensure shapes stay in viewport
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const offset = 20;
+    const newIds = [];
+    
+    for (const shape of selectedShapes) {
+      const { id, createdAt, updatedAt, createdBy, lockedBy, ...shapeData } = shape;
+      
+      // Calculate new position with offset
+      let newX = shapeData.x + offset;
+      let newY = shapeData.y + offset;
+      
+      // Get viewport bounds in canvas coordinates
+      const transform = stage.getAbsoluteTransform().copy().invert();
+      const viewportTopLeft = transform.point({ x: 0, y: 0 });
+      const viewportBottomRight = transform.point({ 
+        x: window.innerWidth, 
+        y: window.innerHeight 
+      });
+      
+      // Check if new position would be mostly offscreen
+      const shapeWidth = shapeData.width || 100;
+      const shapeHeight = shapeData.height || 100;
+      
+      // If more than 75% would be offscreen, place near viewport center instead
+      if (newX + shapeWidth * 0.25 > viewportBottomRight.x ||
+          newY + shapeHeight * 0.25 > viewportBottomRight.y ||
+          newX + shapeWidth * 0.75 < viewportTopLeft.x ||
+          newY + shapeHeight * 0.75 < viewportTopLeft.y) {
+        // Place near viewport center with small offset
+        const centerX = (viewportTopLeft.x + viewportBottomRight.x) / 2;
+        const centerY = (viewportTopLeft.y + viewportBottomRight.y) / 2;
+        newX = centerX - shapeWidth / 2 + offset;
+        newY = centerY - shapeHeight / 2 + offset;
+      }
+      
+      const newShape = {
+        ...shapeData,
+        x: newX,
+        y: newY,
+      };
+      const newId = await addShape(newShape);
+      if (newId) newIds.push(newId);
+    }
+    
+    // Select the duplicated shapes
+    if (newIds.length > 0) {
+      setTimeout(() => selectMultiple(newIds), 100);
+    }
+  };
+  
+  const hasClipboard = clipboard && clipboard.length > 0;
+
+  // ========== LAYER MANAGEMENT (Z-INDEX) ==========
+  const bringToFront = async () => {
+    if (selectedIds.size === 0) return;
+    
+    // Find current max zIndex
+    const maxZIndex = Math.max(0, ...firestoreShapes.map(s => s.zIndex ?? 0));
+    
+    // Get selected shapes and sort by current zIndex to maintain relative order
+    const selectedShapeIds = Array.from(selectedIds);
+    const selectedShapesData = selectedShapeIds
+      .map(id => firestoreShapes.find(s => s.id === id))
+      .filter(Boolean)
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+    
+    // Assign new zIndex values (max + 1, max + 2, etc.)
+    for (let i = 0; i < selectedShapesData.length; i++) {
+      await updateShape(selectedShapesData[i].id, {
+        zIndex: maxZIndex + 1 + i,
+      });
+    }
+    
+    console.log('[BringToFront] Moved', selectedShapesData.length, 'shapes to front');
+  };
+  
+  const sendToBack = async () => {
+    if (selectedIds.size === 0) return;
+    
+    // Find current min zIndex
+    const minZIndex = Math.min(0, ...firestoreShapes.map(s => s.zIndex ?? 0));
+    
+    // Get selected shapes and sort by current zIndex to maintain relative order
+    const selectedShapeIds = Array.from(selectedIds);
+    const selectedShapesData = selectedShapeIds
+      .map(id => firestoreShapes.find(s => s.id === id))
+      .filter(Boolean)
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+    
+    // Assign new zIndex values (min - N, min - N + 1, etc.)
+    const count = selectedShapesData.length;
+    for (let i = 0; i < count; i++) {
+      await updateShape(selectedShapesData[i].id, {
+        zIndex: minZIndex - count + i,
+      });
+    }
+    
+    console.log('[SendToBack] Moved', selectedShapesData.length, 'shapes to back');
+  };
+
+  // ========== ARROW KEY MOVEMENT ==========
+  const moveSelectedShapes = async (deltaX, deltaY) => {
+    if (selectedIds.size === 0) return;
+    
+    const idsToMove = Array.from(selectedIds);
+    
+    // Update all selected shapes
+    for (const id of idsToMove) {
+      const shape = firestoreShapes.find(s => s.id === id);
+      if (shape) {
+        await updateShape(id, {
+          x: shape.x + deltaX,
+          y: shape.y + deltaY,
+        });
+      }
+    }
+  };
+
+  // ========== SELECT ALL ==========
+  const selectAll = async () => {
+    const allShapeIds = firestoreShapes.map(s => s.id);
+    await selectMultiple(allShapeIds);
+  };
+
   const value = {
     shapes,
     // Multi-selection state and methods
@@ -657,6 +1079,26 @@ export const CanvasProvider = ({ children }) => {
     setActiveTool,
     currentFill,
     setCurrentFill,
+    // Undo/Redo
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    editHistory,
+    redoStack,
+    // Clipboard
+    copySelected,
+    pasteFromClipboard,
+    duplicateSelected,
+    hasClipboard,
+    clipboard,
+    // Layer management
+    bringToFront,
+    sendToBack,
+    // Arrow key movement
+    moveSelectedShapes,
+    // Select all
+    selectAll,
   };
 
   return (

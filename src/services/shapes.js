@@ -112,7 +112,7 @@ export const subscribeToShapes = (callback) => {
 export const createShape = async (shapeData) => {
   try {
     const baseShape = {
-      id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: shapeData.id || `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Allow pre-set ID for undo
       canvasId: CANVAS_ID,
       type: shapeData.type || 'rectangle',
       x: shapeData.x,
@@ -120,7 +120,7 @@ export const createShape = async (shapeData) => {
       width: shapeData.width,
       height: shapeData.height,
       fill: shapeData.fill || '#cccccc', // Ensure fill is always a string
-      createdAt: new Date().toISOString(),
+      createdAt: shapeData.createdAt || new Date().toISOString(), // Preserve if provided
       updatedAt: new Date().toISOString(),
       createdBy: shapeData.createdBy || null,
     };
@@ -138,6 +138,7 @@ export const createShape = async (shapeData) => {
     if (shapeData.align !== undefined) extended.align = shapeData.align;
     if (shapeData.fontStyle !== undefined) extended.fontStyle = shapeData.fontStyle;
     if (shapeData.textDecoration !== undefined) extended.textDecoration = shapeData.textDecoration;
+    if (shapeData.zIndex !== undefined) extended.zIndex = shapeData.zIndex;
     // Text box advanced options
     if (shapeData.wrap !== undefined) extended.wrap = shapeData.wrap; // 'none' | 'word' | 'char'
     if (shapeData.padding !== undefined) extended.padding = shapeData.padding; // number px

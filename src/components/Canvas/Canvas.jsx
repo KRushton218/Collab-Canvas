@@ -13,10 +13,11 @@ import {
   MAX_SHAPE_SIZE,
 } from '../../utils/constants';
 import CanvasControls from './CanvasControls';
-import CanvasToolbar from './CanvasToolbar';
+import LeftPanel from './LeftPanel';
 import CanvasHelpOverlay from './CanvasHelpOverlay';
 import StylePanel from './StylePanel';
 import InfiniteGrid from './InfiniteGrid';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 const Canvas = ({ currentUserColor = '#000000' }) => {
   const {
@@ -49,6 +50,19 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     activeTool,
     setActiveTool,
     currentFill,
+    // New features
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    copySelected,
+    pasteFromClipboard,
+    hasClipboard,
+    duplicateSelected,
+    bringToFront,
+    sendToBack,
+    moveSelectedShapes,
+    selectAll,
   } = useContext(CanvasContext);
   const transformerRef = useRef(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -177,6 +191,26 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   // Cursor tracking and online users for lock colors
   const { cursors, updateMyCursor } = useCursors(currentUser?.uid, stageRef);
   
+  // Centralized keyboard shortcuts
+  useKeyboardShortcuts({
+    selectedIds,
+    deselectAll,
+    selectAll,
+    setActiveTool,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    copySelected,
+    pasteFromClipboard,
+    duplicateSelected,
+    deleteShape,
+    bringToFront,
+    sendToBack,
+    moveSelectedShapes,
+    isEditingText: !!editingTextId,
+  });
+  
   // Get lock owner's color helper
   const getLockOwnerColor = (shape) => {
     if (!shape.lockedBy) return null;
@@ -195,6 +229,9 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   // Get lock owner's display name
   const getLockOwnerName = (shape) => {
     if (!shape.lockedBy) return null;
+    
+    // Don't show name if current user is the lock owner
+    if (shape.lockedBy === currentUser?.uid) return null;
     
     // Find the user in cursors (which includes all online users)
     const lockOwner = Object.entries(cursors).find(([userId]) => userId === shape.lockedBy);
@@ -265,24 +302,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     }
   };
 
-  // Handle keyboard delete
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Don't delete shape if we're editing text - let the textarea handle the key
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0 && !editingTextId) {
-        e.preventDefault();
-        // Capture selected IDs before clearing selection
-        const idsToDelete = Array.from(selectedIds);
-        // Clear selection immediately to prevent transformer errors
-        deselectAll();
-        // Delete all shapes
-        idsToDelete.forEach(id => deleteShape(id));
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, editingTextId, deleteShape, deselectAll]);
+  // Keyboard delete now handled by useKeyboardShortcuts hook
 
   // Cleanup: finish any active editing sessions on unmount
   useEffect(() => {
@@ -370,33 +390,16 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     }
   }, [selectedIds, shapes, stageRef]);
 
-  // Handle spacebar pan mode
+  // Handle spacebar pan mode (Space key separate from other shortcuts)
   useEffect(() => {
+    const isEditableElement = (el) => {
+      return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+    };
+
     const handleKeyDown = (e) => {
       if (e.code === 'Space' && !isEditableElement(e.target)) {
         e.preventDefault();
         setIsPanning(true);
-      }
-      if (!isEditableElement(e.target)) {
-        if (e.key === 'Escape') {
-          setIsPanning(false);
-          // If shapes are selected, deselect them first
-          if (selectedIds.size > 0) {
-            deselectAll();
-          } else {
-            // Only return to select tool if nothing was selected
-            if (typeof setActiveTool === 'function') {
-              setActiveTool('select');
-            }
-          }
-        }
-        // Tool shortcuts
-        const key = e.key.toLowerCase();
-        if (key === 'v') setActiveTool?.('select');
-        if (key === 'r') setActiveTool?.('rectangle');
-        if (key === 'c') setActiveTool?.('circle');
-        if (key === 'l') setActiveTool?.('line');
-        if (key === 't') setActiveTool?.('text');
       }
     };
 
@@ -413,7 +416,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedIds, deselectAll]);
+  }, []);
 
   // Update cursor based on pan state
   useEffect(() => {
@@ -804,6 +807,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             const lockOwnerColor = isBeingEditedByMe 
               ? currentUserColor 
               : getLockOwnerColor(shape);
+            const lockOwnerName = getLockOwnerName(shape);
             
             // Calculate stroke width that scales inversely with zoom
             // Base width of 6px (scaled to maintain visibility when zoomed out)
@@ -1467,9 +1471,17 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
         </Layer>
       </Stage>
       
-      <CanvasControls />
-      <CanvasToolbar />
+      {/* Left Panel - Full height, Figma-style */}
+      <LeftPanel />
+      
+      {/* Zoom Controls - Bottom-left, adjusted for left panel */}
+      <div style={{ position: 'absolute', left: '256px', bottom: '20px', zIndex: 1000 }}>
+        <CanvasControls />
+      </div>
+      
+      {/* Right Panel - Properties */}
       <StylePanel />
+      
       <CanvasHelpOverlay />
       
       {/* Text editing overlay */}
@@ -1529,7 +1541,6 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
               transform: `translate(${screenWidth / 2}px, ${screenHeight / 2}px) rotate(${shape.rotation || 0}deg) translate(${-screenWidth / 2}px, ${-screenHeight / 2}px)`,
               transformOrigin: 'top left',
               lineHeight: 1.2,
-              padding: '4px',
             }}
           />
         );

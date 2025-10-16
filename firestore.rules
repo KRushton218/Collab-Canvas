@@ -10,9 +10,8 @@ service cloud.firestore {
       allow read: if request.auth != null;
       
       // Anyone authenticated can create shapes
-      // Optional: Verify createdBy matches auth.uid
+      // Note: createdBy check relaxed to allow undo/redo operations
       allow create: if request.auth != null 
-                    && request.resource.data.createdBy == request.auth.uid
                     && request.resource.data.canvasId is string
                     && request.resource.data.x is number
                     && request.resource.data.y is number
