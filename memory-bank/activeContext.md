@@ -1,13 +1,64 @@
 # Active Context
 
 ## Current Work Focus
-**🎯 Sync, Locks TTL & Text UX** (October 15, 2025)
+**🎯 Presence Idle Detection & Session Cleanup** (October 16, 2025)
 
-**Recent Completion**: Critical fixes for Firebase sync, multi-selection performance, selection-based locking, and selection box usability  
+**Recent Completion**: Comprehensive presence management system with idle detection and stale session handling  
 **Live App**: https://collab-canvas-ed2fc.web.app  
-**Current Phase**: Production-ready with optimized real-time sync
+**Current Phase**: Production-ready with smart presence cleanup
 
 ## Recent Changes (Latest Session)
+
+### Presence Idle Detection & Session Cleanup ✅ (October 16, 2025)
+Implemented comprehensive "clean-up crew" system to handle idle users and prevent ghost sessions:
+
+**Core Features**:
+1. ✅ **Idle Detection** (5 minutes)
+   - Tracks mouse movement via `lastActivity` timestamp
+   - Visual indicators: yellow dot, grayed text, 50% opacity avatar
+   - "(idle)" label in presence list
+   - Users remain in session list but marked as inactive
+
+2. ✅ **Tab-Focused Heartbeat** (30 seconds)
+   - Sends heartbeat only when tab is visible
+   - Stops when tab hidden (saves bandwidth)
+   - Resumes immediately on tab focus
+   - Updates `lastSeen` timestamp
+
+3. ✅ **Stale Session Timeout** (1 hour)
+   - Tracks session age via `sessionStart` timestamp
+   - Triggers on any user interaction after timeout
+   - Shows non-dismissible reconnect modal
+   - Forces page reload to establish fresh session
+
+4. ✅ **Active vs Connected Terminology**
+   - Navbar: Shows "X active" (non-idle users only)
+   - Dropdown: Shows "Connected Sessions" with total count
+   - Clear distinction between active participation and open connections
+
+**Technical Implementation**:
+- Updated presence schema with `lastActivity`, `lastSeen`, `sessionStart`
+- Added `sendHeartbeat()` function with visibility API integration
+- Created `isSessionStale()` helper for timeout detection
+- Enhanced `subscribeToPresence()` with idle calculation
+- `updateCursorPosition()` now updates `lastActivity`
+- ReconnectModal component for expired sessions
+
+**New Components**:
+- `src/components/Collaboration/ReconnectModal.jsx` - Beautiful timeout dialog
+
+**Files Modified**:
+- `src/services/presence.js` - Heartbeat, idle detection, session tracking
+- `src/hooks/usePresence.js` - Tab visibility, heartbeat intervals, stale detection
+- `src/components/Collaboration/PresenceList.jsx` - Idle visual indicators, terminology
+- `src/components/Layout/Navbar.jsx` - Active count (non-idle users)
+- `src/App.jsx` - Stale session detection, reconnect modal integration
+
+**Documentation**: `docs/PRESENCE_IDLE_AND_CLEANUP.md` - Complete feature guide
+
+**Commit**: `2b3908d` - "feat: Add presence idle detection and session cleanup system"
+
+## Recent Changes (Previous Session)
 
 ### Sync, Locks TTL & Text UX ✅ (October 15, 2025)
 Resolved critical issues with multi-user synchronization and multi-selection performance:

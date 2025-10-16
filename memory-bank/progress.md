@@ -31,12 +31,17 @@
 - [x] Real-time cursor tracking
 - [x] Cursor colors per user
 - [x] User presence (online/offline)
+- [x] Idle detection (5 min timeout with visual indicators)
+- [x] Tab-focused heartbeat (30s interval)
+- [x] Stale session cleanup (1 hour timeout)
+- [x] Reconnect modal for expired sessions
+- [x] Active vs connected session terminology
 - [x] Shape locking during edits
 - [x] Multi-shape locking (all-or-nothing)
 - [x] Visual lock indicators (colored borders)
 - [x] Lock conflict prevention
 - [x] Toast notifications for locked shapes
-- [x] Presence list with online users
+- [x] Presence list with idle user indicators
 - [x] Conflict resolution strategies (locks for transforms, LWW for properties)
 - [x] Batched RTDB updates for multi-selection (90-95% reduction in writes)
 - [x] Optimized RTDB→Firestore sync (prevents ghost shapes)
@@ -110,6 +115,11 @@
 - [ ] Ruler/guides
 
 ### Collaboration Enhancements
+- [x] Idle user detection and visual feedback
+- [x] Session cleanup for stale connections
+- [ ] Configurable timeout thresholds
+- [ ] "Away" status based on idle time
+- [ ] Last seen timestamps ("2 hours ago")
 - [ ] Comments on shapes
 - [ ] Chat/messaging
 - [ ] User permissions (owner/editor/viewer)

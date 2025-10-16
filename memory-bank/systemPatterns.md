@@ -13,7 +13,7 @@ The app uses a hybrid database approach for optimal performance:
 
 2. **Realtime Database** (Temporary Data)
    - Live cursor positions (`/cursors/{userId}`)
-   - User presence tracking (`/presence/{userId}`)
+   - User presence tracking (`/sessions/{canvasId}/{userId}`)
    - Active shape edits during drag/resize (`/activeEdits/{shapeId}`)
    - Shape locks with TTL (`/locks/{shapeId}`)
 
@@ -122,4 +122,32 @@ All Firebase operations isolated in service files:
 - **Resize**: Sends x, y, width, height, rotation
 - Prevents coordinate "jumps" for remote viewers during rotation
 - Rotation merges from RTDB for live collaboration
+
+### Presence & Idle Detection Pattern
+**Session Tracking**:
+- Each user has presence record at `/sessions/{canvasId}/{userId}`
+- Schema includes: `displayName`, `cursorColor`, `cursorX`, `cursorY`, `lastSeen`, `lastActivity`, `sessionStart`
+
+**Three-Tiered Timeout Strategy**:
+1. **Idle Detection** (5 minutes no mouse movement)
+   - Calculates `timeSinceActivity` from `lastActivity` timestamp
+   - Sets `isIdle` flag for UI rendering
+   - Visual indicators: yellow dot, grayed text, reduced opacity
+   - User remains in session list
+
+2. **Tab-Focused Heartbeat** (30 seconds)
+   - Updates `lastSeen` while tab is visible
+   - Uses Visibility API to detect tab focus
+   - Stops when hidden (bandwidth optimization)
+   - Restarts immediately on focus
+
+3. **Stale Session** (1 hour)
+   - Compares current time with `sessionStart`
+   - Triggers reconnect modal on interaction
+   - Forces page reload for fresh session
+
+**Presence Terminology**:
+- **Active**: Users with mouse activity in last 5 minutes (navbar count)
+- **Connected Sessions**: All users including idle (presence list total)
+- Distinguishes between active participation and open connections
 

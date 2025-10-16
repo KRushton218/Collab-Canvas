@@ -48,7 +48,11 @@ CollabCanvas solves the problem of real-time visual collaboration without requir
 5. **Panning**: Hold Space and drag, or drag with two fingers
 
 ### Collaboration Features
-- **Presence**: See who's online in the top-right dropdown
+- **Presence**: See who's connected in the top-right dropdown
+  - Navbar shows "X active" (users who have moved mouse in last 5 minutes)
+  - Dropdown shows "Connected Sessions" with total count including idle users
+- **Idle Detection**: Users idle for 5+ minutes show with yellow dot and "(idle)" label
+- **Session Cleanup**: After 1 hour of inactivity, users prompted to reconnect
 - **Cursors**: See colored cursors for each user with their name
 - **Shape Locks**: When someone edits a shape, it shows a colored border
 - **Conflict Prevention**: Can't edit shapes locked by others (shows toast notification)
