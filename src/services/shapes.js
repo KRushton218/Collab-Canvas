@@ -138,6 +138,14 @@ export const createShape = async (shapeData) => {
     if (shapeData.align !== undefined) extended.align = shapeData.align;
     if (shapeData.fontStyle !== undefined) extended.fontStyle = shapeData.fontStyle;
     if (shapeData.textDecoration !== undefined) extended.textDecoration = shapeData.textDecoration;
+    // Text box advanced options
+    if (shapeData.wrap !== undefined) extended.wrap = shapeData.wrap; // 'none' | 'word' | 'char'
+    if (shapeData.padding !== undefined) extended.padding = shapeData.padding; // number px
+    if (shapeData.lineHeight !== undefined) extended.lineHeight = shapeData.lineHeight; // multiplier
+    if (shapeData.boxFill !== undefined) extended.boxFill = shapeData.boxFill; // rgba or hex or 'transparent'
+    if (shapeData.boxStroke !== undefined) extended.boxStroke = shapeData.boxStroke;
+    if (shapeData.boxStrokeWidth !== undefined) extended.boxStrokeWidth = shapeData.boxStrokeWidth;
+    if (shapeData.autoFitHeight !== undefined) extended.autoFitHeight = shapeData.autoFitHeight; // boolean
 
     const newShape = { ...baseShape, ...extended };
 

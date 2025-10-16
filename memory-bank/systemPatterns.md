@@ -15,7 +15,7 @@ The app uses a hybrid database approach for optimal performance:
    - Live cursor positions (`/cursors/{userId}`)
    - User presence tracking (`/presence/{userId}`)
    - Active shape edits during drag/resize (`/activeEdits/{shapeId}`)
-   - Shape locks (`/locks/{shapeId}`)
+   - Shape locks with TTL (`/locks/{shapeId}`)
 
 ### Key Technical Decisions
 
@@ -28,6 +28,11 @@ The app uses a hybrid database approach for optimal performance:
 1. User starts dragging → `startEditingShape()` locks shape in RTDB
 2. During drag → `updateShapeTemporary()` writes to RTDB (throttled)
 3. End drag → `finishEditingShape()` commits to Firestore, clears RTDB
+
+#### Lock TTL & Heartbeat
+- Locks store `lockedBy` and `lockedAt`
+- Heartbeat updates `lockedAt` every ~4s while editing
+- Client prunes locks older than 15s when receiving lock snapshots
 
 #### State Merging
 - Canvas renders merged state: Firestore shapes + RTDB active edits
@@ -106,6 +111,11 @@ All Firebase operations isolated in service files:
 - `textDecoration`: '' | 'underline'
 - `align`: 'left' | 'center' | 'right'
 - All persist to Firestore and sync via RTDB during edits
+
+### Text Resizing Policy
+- Font size changes derive from height (scaleY) during transforms
+- Konva Text uses `wrap="word"`, `lineHeight=1.2`, small `padding`
+- HTML textarea overlay uses stage absolute transform for screen mapping and rotates around center for alignment
 
 ### Rotation Sync Pattern
 - **Pure rotation** (no scale): Only `rotation` sent to RTDB

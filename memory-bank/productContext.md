@@ -52,4 +52,7 @@ CollabCanvas solves the problem of real-time visual collaboration without requir
 - **Cursors**: See colored cursors for each user with their name
 - **Shape Locks**: When someone edits a shape, it shows a colored border
 - **Conflict Prevention**: Can't edit shapes locked by others (shows toast notification)
+- **Right-Side Style Panel**: Contextual controls that adapt to selection
+- **Selection-Aware Controls**: Text formatting appears only when all selected are text
+- **Default Borders**: Subtle borders on shapes for accessibility; visible text bounding boxes
 

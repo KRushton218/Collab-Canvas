@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 
-export const Navbar = ({ onlineUsersCount = 0, onTogglePresence, showPresence }) => {
+export const Navbar = ({ activeUsersCount = 0, onTogglePresence, showPresence }) => {
   const { currentUser, signOut } = useAuth();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [photoError, setPhotoError] = useState(false);
@@ -202,7 +202,7 @@ export const Navbar = ({ onlineUsersCount = 0, onTogglePresence, showPresence })
             )}
           </div>
 
-          {/* Online users indicator - now rightmost */}
+          {/* Active users indicator - now rightmost */}
           <button
             onClick={onTogglePresence}
             style={{
@@ -237,7 +237,7 @@ export const Navbar = ({ onlineUsersCount = 0, onTogglePresence, showPresence })
               boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.3)',
             }} />
             <span style={{ fontWeight: 500 }}>
-              {onlineUsersCount} online
+              {activeUsersCount} active
             </span>
             <svg 
               width="16" 

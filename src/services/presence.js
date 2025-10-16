@@ -8,7 +8,9 @@
  *   cursorColor: string,
  *   cursorX: number,
  *   cursorY: number,
- *   lastSeen: timestamp
+ *   lastSeen: timestamp (heartbeat, tab-focused),
+ *   lastActivity: timestamp (mouse movement),
+ *   sessionStart: timestamp (for 1-hour timeout detection)
  * }
  */
 
@@ -25,6 +27,11 @@ import {
 
 const CANVAS_ID = 'global-canvas-v1';
 
+// Timeout thresholds
+export const IDLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+export const STALE_SESSION_MS = 60 * 60 * 1000; // 1 hour
+export const HEARTBEAT_INTERVAL_MS = 30 * 1000; // 30 seconds
+
 /**
  * Set user as online and establish presence
  * @param {string} userId - User ID
@@ -36,22 +43,25 @@ export const setUserOnline = async (userId, displayName, color) => {
     throw new Error('User ID is required');
   }
 
-  console.log('[Presence] Setting user online:', { userId, displayName, color });
+  // presence logs removed
 
   const userPresenceRef = ref(rtdb, `sessions/${CANVAS_ID}/${userId}`);
   
+  const now = Date.now();
   const presenceData = {
     displayName: displayName || 'Anonymous',
     cursorColor: color,
     cursorX: 0,
     cursorY: 0,
     lastSeen: serverTimestamp(),
+    lastActivity: now,
+    sessionStart: now,
   };
 
   try {
     // Set user as online
     await set(userPresenceRef, presenceData);
-    console.log('[Presence] User set online successfully');
+    // presence logs removed
     
     // Set up automatic cleanup on disconnect
     const disconnectRef = onDisconnect(userPresenceRef);
@@ -59,7 +69,7 @@ export const setUserOnline = async (userId, displayName, color) => {
     
     return true;
   } catch (error) {
-    console.error('[Presence] Error setting user online:', error);
+    // silence presence error logs
     throw error;
   }
 };
@@ -92,33 +102,44 @@ export const setUserOffline = async (userId) => {
 export const subscribeToPresence = (callback) => {
   const sessionsRef = ref(rtdb, `sessions/${CANVAS_ID}`);
   
-  console.log('[Presence] Subscribing to presence updates at:', `sessions/${CANVAS_ID}`);
+  // presence logs removed
   
   const unsubscribe = onValue(sessionsRef, (snapshot) => {
     const data = snapshot.val();
     
-    console.log('[Presence] Received presence update:', data);
+    // presence logs removed
     
     if (!data) {
-      console.log('[Presence] No users online');
+      // presence logs removed
       callback([]);
       return;
     }
     
-    // Convert object to array of users
-    const onlineUsers = Object.entries(data).map(([userId, userData]) => ({
-      userId,
-      displayName: userData.displayName || 'Anonymous',
-      cursorColor: userData.cursorColor,
-      cursorX: userData.cursorX || 0,
-      cursorY: userData.cursorY || 0,
-      lastSeen: userData.lastSeen,
-    }));
+    const now = Date.now();
     
-    console.log('[Presence] Online users:', onlineUsers.length, onlineUsers);
+    // Convert object to array of users
+    const onlineUsers = Object.entries(data).map(([userId, userData]) => {
+      const lastActivity = userData.lastActivity || userData.lastSeen || 0;
+      const timeSinceActivity = now - lastActivity;
+      const isIdle = timeSinceActivity > IDLE_THRESHOLD_MS;
+      
+      return {
+        userId,
+        displayName: userData.displayName || 'Anonymous',
+        cursorColor: userData.cursorColor,
+        cursorX: userData.cursorX || 0,
+        cursorY: userData.cursorY || 0,
+        lastSeen: userData.lastSeen,
+        lastActivity: userData.lastActivity,
+        sessionStart: userData.sessionStart,
+        isIdle, // Flag for UI to show idle state
+      };
+    });
+    
+    // presence logs removed
     callback(onlineUsers);
   }, (error) => {
-    console.error('[Presence] Error subscribing to presence:', error);
+    // silence presence error logs
     callback([]);
   });
   
@@ -127,6 +148,7 @@ export const subscribeToPresence = (callback) => {
 
 /**
  * Update cursor position for presence (also used by cursor tracking)
+ * Also updates lastActivity to track mouse movement for idle detection
  * @param {string} userId - User ID
  * @param {number} x - Cursor X position
  * @param {number} y - Cursor Y position
@@ -141,10 +163,41 @@ export const updateCursorPosition = async (userId, x, y) => {
     await update(userPresenceRef, {
       cursorX: x,
       cursorY: y,
+      lastActivity: Date.now(), // Track mouse movement for idle detection
       lastSeen: serverTimestamp(),
     });
   } catch (error) {
     console.error('Error updating cursor position:', error);
   }
+};
+
+/**
+ * Send heartbeat to keep session alive (tab-focused)
+ * Updates lastSeen without changing lastActivity
+ * @param {string} userId - User ID
+ */
+export const sendHeartbeat = async (userId) => {
+  if (!userId) return;
+
+  const userPresenceRef = ref(rtdb, `sessions/${CANVAS_ID}/${userId}`);
+  
+  try {
+    await update(userPresenceRef, {
+      lastSeen: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error sending heartbeat:', error);
+  }
+};
+
+/**
+ * Check if current session is stale (older than 1 hour)
+ * @param {number} sessionStart - Session start timestamp
+ * @returns {boolean} True if session is stale
+ */
+export const isSessionStale = (sessionStart) => {
+  if (!sessionStart) return false;
+  const now = Date.now();
+  return (now - sessionStart) > STALE_SESSION_MS;
 };
 

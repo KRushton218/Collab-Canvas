@@ -128,10 +128,10 @@ const CanvasControls = () => {
         margin: '0 4px' 
       }} />
 
-      {/* Reset View Button */}
+      {/* Recenter Button */}
       <button
         onClick={resetView}
-        title="Reset View (Fit to Center)"
+        title="Recenter View (100%)"
         style={{
           width: '36px',
           height: '36px',

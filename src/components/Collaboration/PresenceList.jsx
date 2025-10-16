@@ -29,7 +29,7 @@ export const PresenceList = ({ users = [], currentUserId }) => (
         color: '#374151',
         margin: 0,
       }}>
-        Active Users
+        Connected Sessions
       </h3>
       <span style={{
         fontSize: '12px',
@@ -39,7 +39,7 @@ export const PresenceList = ({ users = [], currentUserId }) => (
         borderRadius: '12px',
         fontWeight: 500,
       }}>
-        {users.length} {users.length === 1 ? 'user' : 'users'}
+        {users.length} {users.length === 1 ? 'session' : 'sessions'}
       </span>
     </div>
     <div style={{
@@ -56,7 +56,7 @@ export const PresenceList = ({ users = [], currentUserId }) => (
           textAlign: 'center',
           padding: '20px 0',
         }}>
-          No users online
+          No sessions connected
         </div>
       ) : (
         users.map(user => (
@@ -97,6 +97,8 @@ export const PresenceList = ({ users = [], currentUserId }) => (
               fontSize: '14px',
               fontWeight: 600,
               color: 'white',
+              opacity: user.isIdle ? 0.5 : 1,
+              transition: 'opacity 0.3s ease',
             }}>
               {user.displayName?.charAt(0).toUpperCase() || '?'}
             </div>
@@ -105,7 +107,7 @@ export const PresenceList = ({ users = [], currentUserId }) => (
             <div style={{
               fontSize: '13px',
               fontWeight: 500,
-              color: '#374151',
+              color: user.isIdle ? '#9ca3af' : '#374151',
               flex: 1,
               minWidth: 0,
               overflow: 'hidden',
@@ -123,6 +125,17 @@ export const PresenceList = ({ users = [], currentUserId }) => (
                   (you)
                 </span>
               )}
+              {user.isIdle && (
+                <span style={{
+                  marginLeft: '6px',
+                  fontSize: '11px',
+                  color: '#9ca3af',
+                  fontWeight: 400,
+                  fontStyle: 'italic',
+                }}>
+                  (idle)
+                </span>
+              )}
             </div>
             
             {/* Online status dot */}
@@ -130,9 +143,11 @@ export const PresenceList = ({ users = [], currentUserId }) => (
               width: '8px',
               height: '8px',
               borderRadius: '50%',
-              backgroundColor: '#10b981',
+              backgroundColor: user.isIdle ? '#fbbf24' : '#10b981',
               flexShrink: 0,
-              boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.2)',
+              boxShadow: user.isIdle 
+                ? '0 0 0 2px rgba(251, 191, 36, 0.2)' 
+                : '0 0 0 2px rgba(16, 185, 129, 0.2)',
             }} />
           </div>
         ))

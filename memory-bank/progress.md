@@ -32,10 +32,16 @@
 - [x] Cursor colors per user
 - [x] User presence (online/offline)
 - [x] Shape locking during edits
+- [x] Multi-shape locking (all-or-nothing)
 - [x] Visual lock indicators (colored borders)
 - [x] Lock conflict prevention
 - [x] Toast notifications for locked shapes
 - [x] Presence list with online users
+- [x] Conflict resolution strategies (locks for transforms, LWW for properties)
+- [x] Batched RTDB updates for multi-selection (90-95% reduction in writes)
+- [x] Optimized RTDB→Firestore sync (prevents ghost shapes)
+- [x] Reference-preserving merge logic (prevents unnecessary re-renders)
+- [x] Lock TTL + heartbeat (prevents stale locks)
 
 ### UI/UX
 - [x] Modern toolbar with tool selection (persistent tool mode)
@@ -48,6 +54,8 @@
 - [x] Consistent design system
 - [x] Hand cursor (grab/grabbing) when holding Space for pan
 - [x] Auto-switch to select tool after text creation
+- [x] Default borders for accessibility (rect/circle); text bounding boxes
+- [x] Selection-aware Style Panel (text controls only for text selections)
 
 ### Performance
 - [x] O(1) shape operations (one doc per shape)
@@ -65,13 +73,19 @@
 - [x] Tool mode persistence (V/R/C/L/T; Esc to Select)
 - [x] Draw mode: click to place, click & drag to size
 
+### Shape Editing
 - [x] Shape fill color editing (after creation)
 - [x] Rotation via handles
+- [x] Select multiple shapes (Shift/Ctrl+Click toggle)
+- [x] Drag selection box (marquee/lasso)
+- [x] Group drag (move all selected)
+- [x] Group resize (scale all selected)
+- [x] Group rotate (rotate all selected)
+- [x] Batch property editing (color, rotation, formatting)
 - [ ] Shape stroke/border options
 - [ ] Copy/paste shapes
 - [ ] Duplicate shapes
-- [ ] Select multiple shapes
-- [ ] Group shapes
+- [ ] Group shapes (logical grouping)
 
 ### Text Features
 - [x] Text shape creation (click or drag to size)
@@ -80,6 +94,7 @@
 - [x] Text alignment (left/center/right)
 - [x] Text formatting (bold/italic/underline)
 - [x] Font size scales during resize
+- [x] Text overlay aligns via stage transform; height-driven font scaling
 - [x] Empty text auto-deletes on cancel
 - [ ] Font family selector
 - [ ] Text wrapping modes
@@ -145,6 +160,25 @@
 
 ## Known Bugs
 
-### ✅ Lock Border Persistence (Resolved)
-Resolved by limiting local `editingShapes` to the active shape on start, clearing on drag/transform end, and clearing on deselect.
+### ✅ Ghost Shapes (Resolved - October 15, 2025)
+**Issue**: Shapes would "jump back" to old positions when moved quickly due to RTDB clearing before Firestore propagated.  
+**Resolution**: Reordered sync sequence to wait for Firestore completion (400ms propagation) before clearing RTDB.
+
+### ✅ Selection Box Not Working (Resolved - October 15, 2025)
+**Issue**: Click-and-drag selection only worked when clicking directly on Stage, making it nearly impossible in dense canvases.  
+**Resolution**: Relaxed click detection to accept clicks on Stage, Layer, and background elements.
+
+### ✅ Performance Degradation During Multi-Selection (Resolved - October 15, 2025)
+**Issue**: Dragging 10 shapes sent 300 RTDB writes/second, causing lag and throttling.  
+**Resolution**: Implemented batched RTDB updates using multi-path updates (90-95% reduction in writes).
+
+### ✅ Lock Border Persistence (Resolved - October 15, 2025)
+**Issue**: Lock borders persisted on shapes after multi-selection drag ended.  
+**Resolution**: Explicitly clear `editingShapes` state after `finishEditingMultipleShapes()` and flush pending batch updates.
+
+### ✅ Unnecessary Re-renders (Resolved - October 15, 2025)
+**Issue**: Merge logic created new shape objects on every RTDB update, causing excessive re-renders.  
+**Resolution**: Converted to `useMemo` with reference preservation when values haven't changed.
+
+**No known bugs at this time** ✨
 

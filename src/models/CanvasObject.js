@@ -4,7 +4,7 @@
 // components.
 
 export class CanvasObject {
-  constructor({ id = null, type, x = 0, y = 0, width = 0, height = 0, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0 }) {
+  constructor({ id = null, type, x = 0, y = 0, width = 0, height = 0, fill = '#cccccc', rotation = 0, stroke = '#e5e7eb', strokeWidth = 1 }) {
     this.id = id;
     this.type = type;
     this.x = x;
@@ -36,7 +36,7 @@ export class CanvasObject {
 
 export class RectangleObject extends CanvasObject {
   constructor({ id = null, x = 0, y = 0, width = 100, height = 100, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0, cornerRadius = 0 }) {
-    super({ id, type: 'rectangle', x, y, width, height, fill, rotation, stroke, strokeWidth });
+    super({ id, type: 'rectangle', x, y, width, height, fill, rotation, stroke: stroke ?? '#e5e7eb', strokeWidth: strokeWidth ?? 1 });
     this.cornerRadius = cornerRadius;
   }
 
@@ -51,17 +51,30 @@ export class RectangleObject extends CanvasObject {
 export class CircleObject extends CanvasObject {
   // We model circles as width/height of the bounding box for easier transforms
   constructor({ id = null, x = 0, y = 0, width = 100, height = 100, fill = '#cccccc', rotation = 0, stroke = null, strokeWidth = 0 }) {
-    super({ id, type: 'circle', x, y, width, height, fill, rotation, stroke, strokeWidth });
+    super({ id, type: 'circle', x, y, width, height, fill, rotation, stroke: stroke ?? '#e5e7eb', strokeWidth: strokeWidth ?? 1 });
   }
 }
 
 export class LineObject extends CanvasObject {
   constructor({ id = null, points = [0, 0, 100, 100], fill = 'transparent', stroke = '#374151', strokeWidth = 2 }) {
-    // For lines we keep x/y for compatibility but rendering uses points
-    const minX = Math.min(points[0], points[2]);
-    const minY = Math.min(points[1], points[3]);
-    super({ id, type: 'line', x: minX, y: minY, width: 0, height: 0, fill, rotation: 0, stroke, strokeWidth });
-    this.points = points;
+    // Normalize so that points are relative to (x, y) and width/height reflect the bounding box
+    const x1 = points[0];
+    const y1 = points[1];
+    const x2 = points[2];
+    const y2 = points[3];
+
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxX = Math.max(x1, x2);
+    const maxY = Math.max(y1, y2);
+
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
+
+    // Store node position at top-left of the line's bounding box,
+    // and translate points to local coordinates relative to (0,0)
+    super({ id, type: 'line', x: minX, y: minY, width, height, fill, rotation: 0, stroke, strokeWidth });
+    this.points = [x1 - minX, y1 - minY, x2 - minX, y2 - minY];
   }
 
   toRecord(createdBy = null) {
@@ -74,7 +87,8 @@ export class LineObject extends CanvasObject {
 
 export class TextObject extends CanvasObject {
   constructor({ id = null, x = 0, y = 0, width = 160, height = 40, fill = '#111827', text = 'Text', fontSize = 18, fontFamily = 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif', align = 'left', fontStyle = 'normal', textDecoration = '' }) {
-    super({ id, type: 'text', x, y, width, height, fill });
+    // Text defaults avoid glyph strokes; box border is handled in renderer via selection/locks
+    super({ id, type: 'text', x, y, width, height, fill, stroke: null, strokeWidth: 0 });
     this.text = text;
     this.fontSize = fontSize;
     this.fontFamily = fontFamily;

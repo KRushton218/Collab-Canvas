@@ -1,8 +1,6 @@
 import { useContext, useState } from 'react';
 import { CanvasContext } from '../../contexts/CanvasContext';
 import { 
-  CANVAS_WIDTH, 
-  CANVAS_HEIGHT,
   MIN_SHAPE_SIZE,
   MAX_SHAPE_SIZE,
   DEFAULT_SHAPE_SIZE,
@@ -17,7 +15,7 @@ const clampSize = (value) => {
 };
 
 const CanvasToolbar = () => {
-  const { activeTool, setActiveTool, currentFill, setCurrentFill } = useContext(CanvasContext);
+  const { activeTool, setActiveTool, currentFill, setCurrentFill, selectedIds } = useContext(CanvasContext);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const tools = [
@@ -122,7 +120,9 @@ const CanvasToolbar = () => {
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               position: 'relative',
+              opacity: tool.id !== 'select' && selectedIds && selectedIds.size > 0 ? 0.5 : 1,
             }}
+            disabled={tool.id !== 'select' && selectedIds && selectedIds.size > 0}
             onMouseEnter={(e) => {
               if (activeTool !== tool.id) {
                 e.currentTarget.style.backgroundColor = '#f3f4f6';
@@ -193,41 +193,7 @@ const CanvasToolbar = () => {
               borderRadius: '6px',
               cursor: 'pointer',
             }}
-            onBlur={async (e) => {
-              // Apply fill to selected shape when color picker loses focus
-              if (selectedId) {
-                await updateShape(selectedId, { fill: e.target.value });
-              }
-            }}
           />
-          <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'].map((color) => (
-              <button
-                key={color}
-                onClick={async () => {
-                  setCurrentFill(color);
-                  if (selectedId) {
-                    await updateShape(selectedId, { fill: color });
-                  }
-                }}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '6px',
-                  backgroundColor: color,
-                  border: currentFill === color ? '3px solid #374151' : '2px solid rgba(0, 0, 0, 0.1)',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'scale(1.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-              />
-            ))}
-          </div>
         </div>
       )}
 
