@@ -27,8 +27,8 @@ const lockRefFor = (shapeId) => ref(rtdb, `canvas/${CANVAS_ID}/locks/${shapeId}`
 const userLockEntryRefFor = (userId, shapeId) => ref(rtdb, `canvas/${CANVAS_ID}/userLocks/${userId}/${shapeId}`);
 
 // Lock TTL/Heartbeat settings
-const LOCK_MAX_LIFE_MS = 15000; // Locks auto-expire after 15s without heartbeat
-const LOCK_HEARTBEAT_INTERVAL_MS = 4000; // Heartbeat every 4s while editing
+const LOCK_MAX_LIFE_MS = 30000; // Locks auto-expire after 30s without heartbeat (increased from 15s)
+const LOCK_HEARTBEAT_INTERVAL_MS = 10000; // Heartbeat every 10s while editing (reduced frequency from 4s)
 
 // Track lock heartbeat intervals per-shape to clear on finish
 const lockHeartbeatIntervals = new Map();
@@ -346,21 +346,124 @@ export const acquireLock = async (shapeId, userId) => {
   }
 };
 
+// Shared heartbeat interval for ALL locks (instead of one per shape)
+let sharedHeartbeatInterval = null;
+const activeLocks = new Set(); // Track all active locks
+
 /**
- * Acquire locks for multiple shapes. Returns per-shape results.
+ * Start shared heartbeat interval if not already running
+ * This is much more efficient than one interval per shape
+ */
+const startSharedHeartbeat = () => {
+  if (sharedHeartbeatInterval) return; // Already running
+  
+  sharedHeartbeatInterval = setInterval(async () => {
+    if (activeLocks.size === 0) {
+      // No locks, stop heartbeat
+      clearInterval(sharedHeartbeatInterval);
+      sharedHeartbeatInterval = null;
+      return;
+    }
+    
+    try {
+      // Batch update all lock timestamps in ONE RTDB write
+      const lockHeartbeatUpdate = {};
+      const now = Date.now();
+      for (const shapeId of activeLocks) {
+        lockHeartbeatUpdate[`${shapeId}/lockedAt`] = now;
+      }
+      const locksRef = ref(rtdb, `canvas/${CANVAS_ID}/locks`);
+      await update(locksRef, lockHeartbeatUpdate).catch(() => {});
+    } catch (error) {
+      // Best-effort heartbeat
+      console.error('Heartbeat error:', error);
+    }
+  }, LOCK_HEARTBEAT_INTERVAL_MS);
+};
+
+/**
+ * Acquire locks for multiple shapes - OPTIMIZED for large selections
  * @param {string[]} shapeIds
  * @param {string} userId
  * @returns {Promise<{acquired: string[], failed: string[]}>}
  */
 export const acquireLocks = async (shapeIds, userId) => {
+  if (!shapeIds || shapeIds.length === 0) {
+    return { acquired: [], failed: [] };
+  }
+  
   const acquired = [];
   const failed = [];
-  await Promise.all(
-    (shapeIds || []).map(async (id) => {
-      const ok = await acquireLock(id, userId);
-      if (ok) acquired.push(id); else failed.push(id);
-    })
-  );
+  const now = Date.now();
+  
+  // OPTIMIZATION: Batch read all existing locks in ONE query
+  const locksRef = ref(rtdb, `canvas/${CANVAS_ID}/locks`);
+  const locksSnapshot = await new Promise((resolve) => {
+    onValue(locksRef, resolve, { onlyOnce: true });
+  });
+  const existingLocks = locksSnapshot.val() || {};
+  
+  // Check which shapes can be locked
+  const lockableShapes = [];
+  for (const id of shapeIds) {
+    const existing = existingLocks[id];
+    if (existing && existing.lockedBy && existing.lockedBy !== userId) {
+      failed.push(id); // Locked by someone else
+    } else {
+      lockableShapes.push(id);
+    }
+  }
+  
+  if (lockableShapes.length === 0) {
+    return { acquired, failed };
+  }
+  
+  // OPTIMIZATION: Batch write all locks in ONE multi-path update
+  const batchLockUpdate = {};
+  const batchUserLockUpdate = {};
+  
+  for (const id of lockableShapes) {
+    batchLockUpdate[`${id}/lockedBy`] = userId;
+    batchLockUpdate[`${id}/lockedAt`] = now;
+    batchUserLockUpdate[`${id}`] = true;
+  }
+  
+  try {
+    // Single RTDB write for all locks
+    await update(locksRef, batchLockUpdate);
+    
+    // Single RTDB write for all user lock entries
+    const userLocksPath = ref(rtdb, `canvas/${CANVAS_ID}/userLocks/${userId}`);
+    await update(userLocksPath, batchUserLockUpdate);
+    
+    // Set up onDisconnect for batch (one per user, not per shape)
+    const disconnectLocksRef = onDisconnect(locksRef);
+    for (const id of lockableShapes) {
+      disconnectLocksRef.update({ [id]: null }).catch(() => {});
+    }
+    
+    const disconnectUserLocksRef = onDisconnect(userLocksPath);
+    disconnectUserLocksRef.remove().catch(() => {});
+    
+    // Add to active locks for shared heartbeat
+    for (const id of lockableShapes) {
+      activeLocks.add(id);
+      // Stop individual intervals if they exist
+      if (lockHeartbeatIntervals.has(id)) {
+        clearInterval(lockHeartbeatIntervals.get(id));
+        lockHeartbeatIntervals.delete(id);
+      }
+    }
+    
+    // Start shared heartbeat
+    startSharedHeartbeat();
+    
+    acquired.push(...lockableShapes);
+  } catch (error) {
+    console.error('Error acquiring locks in batch:', error);
+    failed.push(...lockableShapes);
+  }
+  
   return { acquired, failed };
 };
 
@@ -377,6 +480,10 @@ export const releaseLock = async (shapeId, userId) => {
     await remove(lRef).catch(() => {});
     await remove(userEntryRef).catch(() => {});
   } finally {
+    // Remove from shared heartbeat tracking
+    activeLocks.delete(shapeId);
+    
+    // Clean up individual interval if it exists (legacy)
     if (lockHeartbeatIntervals.has(shapeId)) {
       clearInterval(lockHeartbeatIntervals.get(shapeId));
       lockHeartbeatIntervals.delete(shapeId);
@@ -385,12 +492,41 @@ export const releaseLock = async (shapeId, userId) => {
 };
 
 /**
- * Release locks for multiple shapes.
+ * Release locks for multiple shapes - OPTIMIZED for large batches
  * @param {string[]} shapeIds
  * @param {string} userId
  */
 export const releaseLocks = async (shapeIds, userId) => {
-  await Promise.all((shapeIds || []).map((id) => releaseLock(id, userId)));
+  if (!shapeIds || shapeIds.length === 0) return;
+  
+  // OPTIMIZATION: Batch remove all locks in ONE multi-path update
+  const locksRef = ref(rtdb, `canvas/${CANVAS_ID}/locks`);
+  const userLocksPath = ref(rtdb, `canvas/${CANVAS_ID}/userLocks/${userId}`);
+  
+  const batchLockRemove = {};
+  const batchUserLockRemove = {};
+  
+  for (const id of shapeIds) {
+    batchLockRemove[id] = null; // Setting to null removes the key
+    batchUserLockRemove[id] = null;
+    
+    // Remove from shared heartbeat tracking
+    activeLocks.delete(id);
+    
+    // Clean up individual interval if it exists (legacy)
+    if (lockHeartbeatIntervals.has(id)) {
+      clearInterval(lockHeartbeatIntervals.get(id));
+      lockHeartbeatIntervals.delete(id);
+    }
+  }
+  
+  try {
+    // Single RTDB write to remove all locks
+    await update(locksRef, batchLockRemove).catch(() => {});
+    await update(userLocksPath, batchUserLockRemove).catch(() => {});
+  } catch (error) {
+    console.error('Error releasing locks in batch:', error);
+  }
 };
 
 /**
@@ -409,15 +545,30 @@ export const clearActiveEdit = async (shapeId) => {
 };
 
 /**
- * Clear activeEdit entries for multiple shapes (keep their locks).
+ * Clear activeEdit entries for multiple shapes (keep their locks) - OPTIMIZED
  * @param {string[]} shapeIds
  */
 export const clearActiveEdits = async (shapeIds) => {
-  await Promise.all((shapeIds || []).map((id) => clearActiveEdit(id)));
+  if (!shapeIds || shapeIds.length === 0) return;
+  
+  // OPTIMIZATION: Batch clear all active edits in ONE multi-path update
+  const editsRef = allActiveEditsRef();
+  const batchClearEdits = {};
+  
+  for (const id of shapeIds) {
+    batchClearEdits[id] = null; // Setting to null removes the key
+    updateThrottleMap.delete(id); // Clean up throttle map
+  }
+  
+  try {
+    await update(editsRef, batchClearEdits).catch(() => {});
+  } catch (error) {
+    console.error('Error clearing active edits in batch:', error);
+  }
 };
 
 /**
- * Start editing multiple shapes (acquire locks on all)
+ * Start editing multiple shapes (acquire locks on all) - OPTIMIZED for large selections
  * Used for multi-selection transforms
  * @param {string[]} shapeIds - Array of shape IDs
  * @param {string} userId - User ID
@@ -429,77 +580,67 @@ export const startEditingMultipleShapes = async (shapeIds, userId, initialStates
     throw new Error('Shape IDs and User ID are required');
   }
 
-  const lockedShapes = [];
-  const failedShapes = [];
-
   try {
-    // Check if any shapes are already locked by another user
-    for (const shapeId of shapeIds) {
-      const lockRef = ref(rtdb, `canvas/${CANVAS_ID}/locks/${shapeId}`);
-      const snapshot = await new Promise((resolve) => {
-        onValue(lockRef, resolve, { onlyOnce: true });
-      });
-      
-      const existingLock = snapshot.val();
-      if (existingLock && existingLock.lockedBy !== userId) {
-        // Shape is locked by someone else
-        failedShapes.push(shapeId);
-      }
-    }
-
-    // If ANY shape is locked, fail the entire operation (MVP behavior)
-    if (failedShapes.length > 0) {
-      return {
-        success: false,
-        lockedShapes: [],
-        failedShapes,
-      };
-    }
-
-    // Acquire locks on all shapes
-    const lockPromises = shapeIds.map(async (shapeId) => {
-      try {
-        const success = await startEditingShape(shapeId, userId, initialStates[shapeId]);
-        if (success) {
-          lockedShapes.push(shapeId);
-        } else {
-          failedShapes.push(shapeId);
-        }
-      } catch (error) {
-        console.error(`Error locking shape ${shapeId}:`, error);
-        failedShapes.push(shapeId);
-      }
+    // OPTIMIZATION: Single RTDB read to check ALL locks at once
+    const locksRef = ref(rtdb, `canvas/${CANVAS_ID}/locks`);
+    const locksSnapshot = await new Promise((resolve) => {
+      onValue(locksRef, resolve, { onlyOnce: true });
     });
+    const existingLocks = locksSnapshot.val() || {};
 
-    await Promise.all(lockPromises);
+    // Check if any shapes are locked by another user
+    const failedShapes = [];
+    const editableShapes = [];
+    
+    for (const shapeId of shapeIds) {
+      const existingLock = existingLocks[shapeId];
+      if (existingLock && existingLock.lockedBy && existingLock.lockedBy !== userId) {
+        failedShapes.push(shapeId);
+      } else {
+        editableShapes.push(shapeId);
+      }
+    }
 
-    // If we couldn't lock all shapes, release the ones we did lock
+    // If ANY shape is locked by another user, fail the entire operation
     if (failedShapes.length > 0) {
-      await Promise.all(
-        lockedShapes.map(shapeId => 
-          finishEditingShape(shapeId, userId).catch(() => {})
-        )
-      );
       return {
         success: false,
         lockedShapes: [],
         failedShapes,
       };
+    }
+
+    // OPTIMIZATION: Batch create ALL active edits in ONE multi-path update
+    const now = Date.now();
+    const batchActiveEdits = {};
+    
+    for (const shapeId of editableShapes) {
+      const initialState = initialStates[shapeId] || {};
+      batchActiveEdits[`${shapeId}/x`] = initialState.x;
+      batchActiveEdits[`${shapeId}/y`] = initialState.y;
+      batchActiveEdits[`${shapeId}/width`] = initialState.width;
+      batchActiveEdits[`${shapeId}/height`] = initialState.height;
+      batchActiveEdits[`${shapeId}/lockedBy`] = userId;
+      batchActiveEdits[`${shapeId}/lastUpdate`] = now;
+    }
+
+    // Single RTDB write for all active edits
+    const editsRef = allActiveEditsRef();
+    await update(editsRef, batchActiveEdits);
+
+    // Set up onDisconnect for all active edits (batch per user, not per shape)
+    const disconnectRef = onDisconnect(editsRef);
+    for (const shapeId of editableShapes) {
+      disconnectRef.update({ [shapeId]: null }).catch(() => {});
     }
 
     return {
       success: true,
-      lockedShapes,
+      lockedShapes: editableShapes,
       failedShapes: [],
     };
   } catch (error) {
     console.error('Error starting multi-shape edit:', error);
-    // Release any locks we acquired
-    await Promise.all(
-      lockedShapes.map(shapeId => 
-        finishEditingShape(shapeId, userId).catch(() => {})
-      )
-    );
     throw error;
   }
 };
@@ -557,7 +698,7 @@ export const updateEditingShapesBatch = async (updates, forceUpdate = false) => 
 };
 
 /**
- * Finish editing multiple shapes (commit to Firestore and release locks)
+ * Finish editing multiple shapes (commit to Firestore and release locks) - OPTIMIZED
  * @param {string[]} shapeIds - Array of shape IDs
  * @param {string} userId - User ID
  * @returns {Promise<void>}
@@ -569,14 +710,28 @@ export const finishEditingMultipleShapes = async (shapeIds, userId) => {
 
   // Clear batch throttle entry
   updateThrottleMap.delete('batch');
+  
+  // Clear individual throttle entries
+  for (const shapeId of shapeIds) {
+    updateThrottleMap.delete(shapeId);
+  }
 
-  // Release all locks in parallel
-  await Promise.all(
-    shapeIds.map(shapeId => 
-      finishEditingShape(shapeId, userId).catch((error) => {
-        console.error(`Error finishing shape ${shapeId}:`, error);
-      })
-    )
-  );
+  // OPTIMIZATION: Batch clear all active edits in ONE multi-path update
+  const editsRef = allActiveEditsRef();
+  const batchClearEdits = {};
+  
+  for (const shapeId of shapeIds) {
+    batchClearEdits[shapeId] = null; // Setting to null removes the key
+  }
+
+  try {
+    // Single RTDB write to remove all active edits
+    await update(editsRef, batchClearEdits).catch(() => {});
+  } catch (error) {
+    console.error('Error clearing active edits in batch:', error);
+  }
+  
+  // Note: Locks are NOT released here - that's handled by releaseLocks() separately
+  // This allows shapes to stay selected (with locks) after drag completes
 };
 

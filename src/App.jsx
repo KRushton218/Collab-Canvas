@@ -7,6 +7,7 @@ import { Login } from './components/Auth/Login';
 import { Navbar } from './components/Layout/Navbar';
 import { PresenceList } from './components/Collaboration/PresenceList';
 import { ReconnectModal } from './components/Collaboration/ReconnectModal';
+import BatchOperationIndicator from './components/Canvas/BatchOperationIndicator';
 import Canvas from './components/Canvas/Canvas';
 
 // Main App Content (after authentication)
@@ -36,6 +37,7 @@ const AppContent = () => {
     };
   }, [isStale, currentUser]);
 
+  // Show login BEFORE initializing CanvasProvider (don't load 641 shapes before login!)
   if (!currentUser) {
     return <Login />;
   }
@@ -57,35 +59,39 @@ const AppContent = () => {
   };
 
   return (
-    <CanvasProvider>
-      <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-        {/* Navbar */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000 }}>
-          <Navbar 
-            activeUsersCount={activeUsersCount} 
-            onTogglePresence={togglePresence}
-            showPresence={showPresence}
-          />
-        </div>
-        
-        {/* Presence Roster - dropdown from navbar, only shown when toggled */}
-        {showPresence && (
-          <div style={{ 
-            position: 'absolute', 
-            top: '60px', 
-            right: '16px', 
-            zIndex: 999,
-            animation: 'slideDown 0.2s ease-out',
-          }}>
-            <PresenceList users={onlineUsers} currentUserId={currentUser?.uid} />
-          </div>
-        )}
-        
-        <Canvas currentUserColor={currentUserColor} />
-
-        {/* Reconnect Modal for stale sessions */}
-        {showReconnectModal && <ReconnectModal onReconnect={handleReconnect} />}
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      {/* Navbar */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000 }}>
+        <Navbar 
+          activeUsersCount={activeUsersCount} 
+          onTogglePresence={togglePresence}
+          showPresence={showPresence}
+        />
       </div>
+      
+      {/* Presence Roster - dropdown from navbar, only shown when toggled */}
+      {showPresence && (
+        <div style={{ 
+          position: 'absolute', 
+          top: '60px', 
+          right: '16px', 
+          zIndex: 999,
+          animation: 'slideDown 0.2s ease-out',
+        }}>
+          <PresenceList users={onlineUsers} currentUserId={currentUser?.uid} />
+        </div>
+      )}
+      
+      {/* Canvas Component - CanvasProvider wraps only the canvas, not the entire app */}
+      <CanvasProvider>
+        <Canvas currentUserColor={currentUserColor} />
+        
+        {/* Batch Operation Loading Indicator */}
+        <BatchOperationIndicator />
+      </CanvasProvider>
+
+      {/* Reconnect Modal for stale sessions */}
+      {showReconnectModal && <ReconnectModal onReconnect={handleReconnect} />}
 
       {/* Animation styles */}
       <style>{`
@@ -100,7 +106,7 @@ const AppContent = () => {
           }
         }
       `}</style>
-    </CanvasProvider>
+    </div>
   );
 };
 

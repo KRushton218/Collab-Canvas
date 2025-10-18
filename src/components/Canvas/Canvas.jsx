@@ -1,10 +1,11 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState, useMemo } from 'react';
 import { Stage, Layer, Rect, Transformer, Group, Path, Line, Circle, Text as KonvaText } from 'react-konva';
 import { CanvasContext } from '../../contexts/CanvasContext';
 import { isShapeLockedByOther } from '../../services/shapes';
 import { useCursors } from '../../hooks/useCursors';
 import { Cursor } from '../Collaboration/Cursor';
 import ShapeNode from './ShapeNode';
+import SelectionGroupNode from './SelectionGroupNode';
 import { RectangleObject, CircleObject, LineObject, TextObject } from '../../models/CanvasObject';
 import { 
   MIN_ZOOM,
@@ -146,6 +147,65 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
     };
   }, []);
   
+  // ========== SELECTION GROUP HANDLERS (for multi-selection as single entity) ==========
+  const handleGroupDragStart = async (groupData) => {
+    if (isPanning) return;
+    
+    // Start editing all shapes in the group
+    const selectedShapeIds = Array.from(selectedIds);
+    const initialStates = {};
+    for (const id of selectedShapeIds) {
+      const shape = shapes.find(s => s.id === id);
+      if (shape) {
+        initialStates[id] = {
+          x: shape.x,
+          y: shape.y,
+          width: shape.width,
+          height: shape.height,
+        };
+      }
+    }
+    
+    const result = await startEditingMultipleShapes(selectedShapeIds);
+    if (result.success) {
+      setEditingShapes(new Set(selectedShapeIds));
+    } else {
+      showToast(`🔒 ${result.failedShapes.length} shapes are locked by another user`);
+    }
+  };
+  
+  const handleGroupDragMove = (finalStates) => {
+    if (isPanning) return;
+    
+    // Update RTDB with batched updates (throttled)
+    updateShapesTemporaryBatch(finalStates);
+    
+    // Update cursor position
+    updateMyCursor(Object.values(finalStates)[0]?.x || 0, Object.values(finalStates)[0]?.y || 0);
+  };
+  
+  const handleGroupDragEnd = async (finalStates) => {
+    if (isPanning) return;
+    
+    // Commit all shapes to Firestore
+    const idsArray = Object.keys(finalStates);
+    await finishEditingMultipleShapes(idsArray, finalStates);
+    
+    // Clear editing state
+    setEditingShapes(new Set());
+  };
+  
+  const handleGroupTransformEnd = async (finalStates) => {
+    if (isPanning) return;
+    
+    // Commit all shapes to Firestore
+    const idsArray = Object.keys(finalStates);
+    await finishEditingMultipleShapes(idsArray, finalStates);
+    
+    // Clear editing state
+    setEditingShapes(new Set());
+  };
+  
   // Focus text input when editing starts
   useEffect(() => {
     if (editingTextId && textInputRef.current) {
@@ -190,6 +250,55 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
   
   // Cursor tracking and online users for lock colors
   const { cursors, updateMyCursor } = useCursors(currentUser?.uid, stageRef);
+  
+  // Viewport culling - only render shapes visible in current viewport
+  // CRITICAL: Always render ALL selected shapes (even off-screen) for proper visual feedback
+  const visibleShapes = useMemo(() => {
+    if (!stageRef.current || shapes.length === 0) return shapes;
+    
+    // If small number of shapes, render all (no benefit to culling)
+    if (shapes.length < 100) return shapes;
+    
+    const stage = stageRef.current;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Get canvas coordinates for viewport bounds
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const topLeft = transform.point({ x: 0, y: 0 });
+    const bottomRight = transform.point({ x: viewportWidth, y: viewportHeight });
+    
+    // Add margin for shapes partially visible
+    const margin = 200;
+    const viewportBounds = {
+      left: topLeft.x - margin,
+      top: topLeft.y - margin,
+      right: bottomRight.x + margin,
+      bottom: bottomRight.y + margin,
+    };
+    
+    // Filter shapes that intersect with viewport
+    return shapes.filter(shape => {
+      const shapeRight = shape.x + (shape.width || 0);
+      const shapeBottom = shape.y + (shape.height || 0);
+      
+      // CRITICAL: Always render selected shapes (even if off-screen) 
+      // This ensures selection borders, lock borders, and transformer handles all work
+      if (selectedIds.has(shape.id)) return true;
+      
+      // Check if shape intersects viewport
+      return !(shapeRight < viewportBounds.left ||
+               shape.x > viewportBounds.right ||
+               shapeBottom < viewportBounds.top ||
+               shape.y > viewportBounds.bottom);
+    });
+  }, [shapes, position, scale, selectedIds]);
+  
+  // Memoize selected shapes - only recalculate when selection actually changes
+  const selectedShapes = useMemo(() => {
+    if (selectedIds.size === 0) return [];
+    return shapes.filter(s => selectedIds.has(s.id));
+  }, [selectedIds.size, shapes.length]); // Shallow deps to avoid expensive checks
   
   // Centralized keyboard shortcuts
   useKeyboardShortcuts({
@@ -564,30 +673,30 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
       setIsSelecting(false);
       
       if (selectionBox && selectionBox.width > 5 && selectionBox.height > 5) {
-        // Find all shapes within the selection box (EXCLUDING locked shapes)
-        const selectedShapeIds = shapes.filter(shape => {
-          // NEVER select shapes locked by other users
-          const isLockedByOther = currentUser && isShapeLockedByOther(locks, shape.id, currentUser.uid);
-          if (isLockedByOther) {
-            return false;
-          }
-          
-          // Check if shape intersects with selection box
-          const shapeLeft = shape.x;
-          const shapeTop = shape.y;
+        // OPTIMIZATION: Only check shapes in the selection box area (not all 641!)
+        // This dramatically improves performance with large canvases
+        const boxLeft = selectionBox.x;
+        const boxTop = selectionBox.y;
+        const boxRight = selectionBox.x + selectionBox.width;
+        const boxBottom = selectionBox.y + selectionBox.height;
+        
+        // Filter to shapes that could possibly intersect
+        const candidateShapes = shapes.filter(shape => {
           const shapeRight = shape.x + (shape.width || 0);
           const shapeBottom = shape.y + (shape.height || 0);
           
-          const boxLeft = selectionBox.x;
-          const boxTop = selectionBox.y;
-          const boxRight = selectionBox.x + selectionBox.width;
-          const boxBottom = selectionBox.y + selectionBox.height;
-          
-          // Check if shape is fully or partially within the box
+          // Quick bounds check - if shape is nowhere near selection box, skip
           return !(shapeRight < boxLeft || 
-                   shapeLeft > boxRight || 
+                   shape.x > boxRight || 
                    shapeBottom < boxTop || 
-                   shapeTop > boxBottom);
+                   shape.y > boxBottom);
+        });
+        
+        // Now check locks only for candidate shapes (much smaller set)
+        const selectedShapeIds = candidateShapes.filter(shape => {
+          // NEVER select shapes locked by other users
+          const isLockedByOther = currentUser && isShapeLockedByOther(locks, shape.id, currentUser.uid);
+          return !isLockedByOther;
         }).map(shape => shape.id);
         
         if (selectionModifier === 'toggle') {
@@ -792,8 +901,8 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             </Group>
           )}
           
-          {/* Shapes will be rendered here */}
-          {shapes.map((shape) => {
+          {/* Shapes will be rendered here - VIEWPORT CULLING: only render visible shapes */}
+          {visibleShapes.map((shape) => {
             // Check if this shape is being actively edited by current user
             const isBeingEditedByMe = editingShapesRef.current.has(shape.id);
             
@@ -814,9 +923,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             const baseStrokeWidth = 6;
             const scaledStrokeWidth = baseStrokeWidth / scale;
             
-            // Lock icon size and position (scales with zoom)
-            const lockIconSize = 28 / scale; // Base 28px (larger for visibility)
-            const lockIconOffset = 12 / scale; // 12px from corner
+            // Lock visual indicator removed - functionality remains
             
             const onSelect = (e) => {
               if (isPanning) return;
@@ -1376,69 +1483,24 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
                   </>
                 )}
                 
-              {/* Lock indicator - only show for shapes locked by OTHER users, not yourself */}
-              {isLocked && lockOwnerColor && !isBeingEditedByMe && (
-                <>
-                  {/* Lock icon */}
-                  <Group
-                    x={shape.x + lockIconOffset}
-                    y={shape.y + lockIconOffset}
-                    listening={false}
-                  >
-                    {/* White background circle for visibility */}
-                    <Rect
-                      x={0}
-                      y={0}
-                      width={lockIconSize}
-                      height={lockIconSize}
-                      fill="white"
-                      cornerRadius={lockIconSize / 4}
-                      shadowColor="black"
-                      shadowBlur={3 / scale}
-                      shadowOpacity={0.4}
-                    />
-                    
-                    {/* Material Design Lock Icon (padlock) */}
-                    <Path
-                      data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"
-                      fill={lockOwnerColor}
-                      scaleX={lockIconSize / 24}
-                      scaleY={lockIconSize / 24}
-                    />
-                  </Group>
-                  
-                  {/* Name label showing WHO is editing */}
-                  {lockOwnerName && (
-                    <Group
-                      x={shape.x + lockIconOffset}
-                      y={shape.y + lockIconOffset + lockIconSize + 4 / scale}
-                      listening={false}
-                    >
-                      {/* Background for name label */}
-                      <Rect
-                        x={0}
-                        y={0}
-                        width={lockOwnerName.length * 7 / scale}
-                        height={16 / scale}
-                        fill="rgba(0, 0, 0, 0.8)"
-                        cornerRadius={4 / scale}
-                      />
-                      {/* Name text */}
-                      <KonvaText
-                        x={4 / scale}
-                        y={2 / scale}
-                        text={lockOwnerName}
-                        fontSize={11 / scale}
-                        fill="white"
-                        fontFamily="Inter, system-ui"
-                      />
-                    </Group>
-                  )}
-                </>
-              )}
+              {/* Lock visual indicator removed - lock borders and functionality remain */}
             </Group>
             );
           })}
+          
+          {/* Selection Group - DISABLED temporarily until performance optimized */}
+          {/* {selectedIds.size > 1 && selectedShapes.length > 0 && (
+            <SelectionGroupNode
+              key={`group-${selectedIds.size}`}
+              shapes={selectedShapes}
+              onDragStart={handleGroupDragStart}
+              onDragMove={handleGroupDragMove}
+              onDragEnd={handleGroupDragEnd}
+              onTransformEnd={handleGroupTransformEnd}
+              isPanning={isPanning}
+            />
+          )} */}
+          
           <Transformer
             ref={transformerRef}
             rotateEnabled={true}

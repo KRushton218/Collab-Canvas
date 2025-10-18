@@ -29,7 +29,8 @@ import {
   collection,
   query,
   where,
-  onSnapshot 
+  onSnapshot,
+  writeBatch
 } from 'firebase/firestore';
 import { CANVAS_ID } from '../utils/constants';
 import { db } from './firebase';
@@ -252,4 +253,122 @@ export const isShapeLockedByOther = (locks, shapeId, currentUserId) => {
 export const getShapeLockOwner = (locks, shapeId) => {
   const lock = locks[shapeId];
   return lock?.lockedBy || null;
+};
+
+/**
+ * Batch create multiple shapes in a single Firestore transaction
+ * Much more efficient than individual createShape calls for bulk operations
+ * @param {Array<Object>} shapesData - Array of shape data objects
+ * @returns {Promise<Array<string>>} Array of created shape IDs
+ */
+export const batchCreateShapes = async (shapesData) => {
+  try {
+    if (!shapesData || shapesData.length === 0) {
+      return [];
+    }
+
+    // Firestore batches are limited to 500 operations
+    const BATCH_SIZE = 500;
+    const allIds = [];
+
+    // Process in chunks of 500
+    for (let i = 0; i < shapesData.length; i += BATCH_SIZE) {
+      const chunk = shapesData.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      const chunkIds = [];
+
+      for (const shapeData of chunk) {
+        const baseShape = {
+          id: shapeData.id || `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          canvasId: CANVAS_ID,
+          type: shapeData.type || 'rectangle',
+          x: shapeData.x,
+          y: shapeData.y,
+          width: shapeData.width,
+          height: shapeData.height,
+          fill: shapeData.fill || '#cccccc',
+          createdAt: shapeData.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          createdBy: shapeData.createdBy || null,
+        };
+
+        // Add optional fields
+        const extended = {};
+        if (shapeData.rotation !== undefined) extended.rotation = shapeData.rotation;
+        if (shapeData.stroke !== undefined) extended.stroke = shapeData.stroke;
+        if (shapeData.strokeWidth !== undefined) extended.strokeWidth = shapeData.strokeWidth;
+        if (shapeData.cornerRadius !== undefined) extended.cornerRadius = shapeData.cornerRadius;
+        if (shapeData.points !== undefined) extended.points = shapeData.points;
+        if (shapeData.text !== undefined) extended.text = shapeData.text;
+        if (shapeData.fontSize !== undefined) extended.fontSize = shapeData.fontSize;
+        if (shapeData.fontFamily !== undefined) extended.fontFamily = shapeData.fontFamily;
+        if (shapeData.align !== undefined) extended.align = shapeData.align;
+        if (shapeData.fontStyle !== undefined) extended.fontStyle = shapeData.fontStyle;
+        if (shapeData.textDecoration !== undefined) extended.textDecoration = shapeData.textDecoration;
+        if (shapeData.zIndex !== undefined) extended.zIndex = shapeData.zIndex;
+        if (shapeData.wrap !== undefined) extended.wrap = shapeData.wrap;
+        if (shapeData.padding !== undefined) extended.padding = shapeData.padding;
+        if (shapeData.lineHeight !== undefined) extended.lineHeight = shapeData.lineHeight;
+        if (shapeData.boxFill !== undefined) extended.boxFill = shapeData.boxFill;
+        if (shapeData.boxStroke !== undefined) extended.boxStroke = shapeData.boxStroke;
+        if (shapeData.boxStrokeWidth !== undefined) extended.boxStrokeWidth = shapeData.boxStrokeWidth;
+        if (shapeData.autoFitHeight !== undefined) extended.autoFitHeight = shapeData.autoFitHeight;
+
+        const newShape = { ...baseShape, ...extended };
+        const shapeRef = doc(db, 'shapes', newShape.id);
+        batch.set(shapeRef, newShape);
+        chunkIds.push(newShape.id);
+      }
+
+      // Commit this batch
+      await batch.commit();
+      allIds.push(...chunkIds);
+      
+      console.log(`[BatchCreate] Created ${chunkIds.length} shapes in batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+    }
+
+    return allIds;
+  } catch (error) {
+    console.error('Error batch creating shapes:', error);
+    throw error;
+  }
+};
+
+/**
+ * Batch update multiple shapes in a single Firestore transaction
+ * Much more efficient than individual updateShape calls for bulk operations
+ * @param {Array<{id: string, updates: Object}>} updates - Array of {id, updates} objects
+ * @returns {Promise<void>}
+ */
+export const batchUpdateShapes = async (updates) => {
+  try {
+    if (!updates || updates.length === 0) {
+      return;
+    }
+
+    // Firestore batches are limited to 500 operations
+    const BATCH_SIZE = 500;
+
+    // Process in chunks of 500
+    for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+      const chunk = updates.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+
+      for (const { id, updates: shapeUpdates } of chunk) {
+        const shapeRef = doc(db, 'shapes', id);
+        batch.update(shapeRef, {
+          ...shapeUpdates,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      // Commit this batch
+      await batch.commit();
+      
+      console.log(`[BatchUpdate] Updated ${chunk.length} shapes in batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+    }
+  } catch (error) {
+    console.error('Error batch updating shapes:', error);
+    throw error;
+  }
 };

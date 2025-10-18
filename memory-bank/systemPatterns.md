@@ -39,29 +39,123 @@ The app uses a hybrid database approach for optimal performance:
 - Local user's edits bypass RTDB updates (prevents hitching)
 - Other users' RTDB updates show in real-time
 
+#### Batch Operations (Performance Optimization)
+Firestore batch commits dramatically improve performance for bulk operations:
+
+**Batch Create Pattern**:
+- Used for: paste, duplicate, bulk add operations
+- Collects all shapes into array → single `batchCreateShapes()` call
+- Firestore `writeBatch()` commits all creates in 1 transaction
+- Limit: 500 operations per batch (auto-chunks if needed)
+- Result: 1 network call instead of N individual calls
+
+**Batch Update Pattern**:
+- Used for: multi-drag completion, arrow keys, layer management
+- Collects all updates as `{id, updates}` array → single `batchUpdateShapes()` call
+- Firestore `writeBatch()` commits all updates in 1 transaction
+- Limit: 500 operations per batch (auto-chunks if needed)
+- Result: 1 network call instead of N individual calls
+
+**Combined RTDB + Firestore Batching**:
+- Multi-selection transforms use both:
+  1. RTDB batch update (live preview for other users)
+  2. Firestore batch update (persistent storage)
+  3. Total: 2 network calls instead of 2N calls
+
+**Performance Gains**:
+- 50 shapes pasted: 50 calls → 1 call = **98% reduction**
+- 20 shapes moved: 40 calls → 2 calls = **95% reduction**
+- Sub-200ms operations instead of multi-second lag
+
+#### Optimistic UI Pattern
+Eliminates perceived lag by showing changes immediately before server confirmation:
+
+**Pattern Flow**:
+1. User action (paste/duplicate)
+2. Generate shape IDs immediately
+3. Add to `optimisticShapes` state → **instant render**
+4. Send batch to Firestore in background
+5. Firestore confirms → shapes added to `firestoreShapes`
+6. Merge logic filters out confirmed optimistic shapes
+7. User sees seamless transition (optimistic → confirmed)
+
+**Benefits**:
+- Zero perceived lag (shapes appear instantly)
+- Firestore confirmation happens in background
+- Automatic sync when confirmed
+- Graceful handling of failures (optimistic shapes persist until confirmed)
+
+**Used For**:
+- Paste operations (any size)
+- Duplicate operations (any size)
+
+**Not Used For** (intentionally):
+- Multi-drag completion (needs real-time preview via RTDB)
+- Single shape edits (fast enough without optimization)
+- Deletes (instant via Firestore listener)
+
+#### Loading Indicators
+Smart loading state for large batch operations:
+
+**When Shown**:
+- Operations with > 20 shapes
+- Paste, duplicate, future bulk operations
+
+**UI Details**:
+- Centered modal with spinner
+- Operation name and count
+- "This will only take a moment" subtext
+- Non-blocking (user can still see canvas)
+- Auto-dismisses on completion
+
+**Combined with Optimistic UI**:
+- Shapes appear instantly (optimistic)
+- Loading indicator shows while Firestore confirms
+- Best of both worlds: instant feedback + progress awareness
+
 ## Component Relationships
 
 ```
 App.jsx
 ├── AuthProvider (context)
 │   └── Provides: currentUser, signIn, signOut
-├── CanvasProvider (context)
-│   └── Provides: shapes, scale, position, add/update/delete functions
-├── Navbar
-│   ├── Profile dropdown (photo, logout)
-│   └── Online users toggle
-├── PresenceList (conditional)
-│   └── Shows active users with colors
-└── Canvas
-    ├── Stage (Konva)
-    │   ├── Background layer
-    │   ├── Shapes layer (with locks/transforms)
-    │   └── Cursors layer
-    ├── CanvasToolbar (left side)
-    ├── StylePanel (right side)
-    ├── CanvasControls (bottom-left)
-    └── CanvasHelpOverlay
+│   └── AppContent
+│       ├── Navbar
+│       │   ├── Profile dropdown (photo, logout)
+│       │   └── Online users toggle
+│       ├── PresenceList (conditional)
+│       │   └── Shows active users with colors
+│       ├── CanvasProvider (context) ← ONLY wraps Canvas component
+│       │   └── Provides: shapes, scale, position, add/update/delete functions
+│       │   └── Canvas
+│       │       ├── Stage (Konva)
+│       │       │   ├── Background layer
+│       │       │   ├── Shapes layer (viewport culled, with locks/transforms)
+│       │       │   └── Cursors layer
+│       │       ├── CanvasToolbar (left side)
+│       │       ├── StylePanel (right side)
+│       │       ├── CanvasControls (bottom-left)
+│       │       ├── CanvasHelpOverlay
+│       │       └── BatchOperationIndicator
+│       └── ReconnectModal (conditional)
 ```
+
+### Architecture Principles
+
+**1. Context Scoping**:
+- `AuthProvider` wraps entire app (auth needed everywhere)
+- `CanvasProvider` wraps **ONLY Canvas component** (shapes only needed in canvas)
+- Prevents unnecessary initialization of canvas data for navbar/modals
+
+**2. Component Isolation**:
+- Canvas is self-contained and reusable
+- Navbar/modals independent of canvas state
+- Clean separation enables multiple canvases pattern
+
+**3. Lazy Initialization**:
+- Canvas data loads only when Canvas component mounts
+- Navbar renders immediately (no waiting for Firestore)
+- Progressive enhancement: UI first, heavy data second
 
 ## Design Patterns in Use
 

@@ -13,8 +13,15 @@ export const CanvasProvider = ({ children }) => {
   
   // Separate state for Firestore (persistent) and RTDB (temporary) data
   const [firestoreShapes, setFirestoreShapes] = useState([]);
+  const [optimisticShapes, setOptimisticShapes] = useState([]); // Shapes shown immediately before Firestore confirms
   const [activeEdits, setActiveEdits] = useState({});
-  const [locks, setLocks] = useState({});
+  const [rtdbLocks, setRtdbLocks] = useState({}); // Locks from RTDB
+  const [optimisticLocks, setOptimisticLocks] = useState({}); // Local locks (instant UI feedback)
+  
+  // Merge RTDB locks with optimistic locks
+  const locks = useMemo(() => {
+    return { ...rtdbLocks, ...optimisticLocks };
+  }, [rtdbLocks, optimisticLocks]);
   
   // Multi-selection support (Set of shape IDs)
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -24,7 +31,10 @@ export const CanvasProvider = ({ children }) => {
     y: window.innerHeight / 2 - INITIAL_CANVAS_Y 
   });
   const [loading, setLoading] = useState(true);
+  const [batchOperationLoading, setBatchOperationLoading] = useState(false);
+  const [batchOperationProgress, setBatchOperationProgress] = useState({ current: 0, total: 0, operation: '' });
   const stageRef = useRef(null);
+  const editSessionStartRef = useRef(new Map());
 
   // Tool state (used by toolbar and canvas interactions)
   const [activeTool, setActiveTool] = useState('select');
@@ -86,12 +96,25 @@ export const CanvasProvider = ({ children }) => {
   // Subscribe to RTDB locks
   useEffect(() => {
     if (!currentUser) {
-      setLocks({});
+      setRtdbLocks({});
       return;
     }
 
     const unsubscribe = realtimeShapes.subscribeToLocks((lockData) => {
-      setLocks(lockData);
+      setRtdbLocks(lockData);
+      
+      // Clear optimistic locks that have been confirmed in RTDB
+      setOptimisticLocks(prev => {
+        const confirmed = {};
+        for (const [id, lock] of Object.entries(prev)) {
+          if (!lockData[id]) {
+            // Lock not yet in RTDB, keep optimistic
+            confirmed[id] = lock;
+          }
+          // Otherwise RTDB has it, remove optimistic
+        }
+        return confirmed;
+      });
     });
 
     return () => {
@@ -99,10 +122,11 @@ export const CanvasProvider = ({ children }) => {
     };
   }, [currentUser]);
 
-  // Merge Firestore shapes with RTDB active edits using useMemo
+  // Merge Firestore shapes with RTDB active edits AND optimistic shapes using useMemo
   // This prevents unnecessary re-renders and only recomputes when dependencies actually change
   const mergedShapes = useMemo(() => {
-    return firestoreShapes.map((shape) => {
+    // Start with Firestore shapes
+    const baseShapes = firestoreShapes.map((shape) => {
       const activeEdit = activeEdits[shape.id];
       const lock = locks[shape.id];
       const lockOwner = lock?.lockedBy || null;
@@ -150,7 +174,14 @@ export const CanvasProvider = ({ children }) => {
         lockedBy: lockOwner,
       };
     });
-  }, [firestoreShapes, activeEdits, locks, currentUser]);
+    
+    // Add optimistic shapes (shown immediately before Firestore confirms)
+    // Filter out any optimistic shapes that have been confirmed in Firestore
+    const confirmedIds = new Set(firestoreShapes.map(s => s.id));
+    const pendingOptimistic = optimisticShapes.filter(s => !confirmedIds.has(s.id));
+    
+    return [...baseShapes, ...pendingOptimistic];
+  }, [firestoreShapes, optimisticShapes, activeEdits, locks, currentUser]);
   
   // Sort shapes by zIndex (ascending = bottom to top rendering order)
   const shapes = useMemo(() => {
@@ -285,6 +316,12 @@ export const CanvasProvider = ({ children }) => {
         height: shape.height,
       });
 
+      if (success) {
+        editSessionStartRef.current.set(id, { ...shape });
+      } else {
+        editSessionStartRef.current.delete(id);
+      }
+
       return success;
     } catch (error) {
       console.error('Error starting shape edit:', error);
@@ -310,6 +347,7 @@ export const CanvasProvider = ({ children }) => {
             width: shape.width,
             height: shape.height,
           };
+          editSessionStartRef.current.set(id, { ...shape });
         }
       }
 
@@ -319,6 +357,12 @@ export const CanvasProvider = ({ children }) => {
         currentUser.uid,
         initialStates
       );
+
+      if (!result.success) {
+        ids.forEach((shapeId) => {
+          editSessionStartRef.current.delete(shapeId);
+        });
+      }
 
       return result;
     } catch (error) {
@@ -334,32 +378,20 @@ export const CanvasProvider = ({ children }) => {
     }
 
     try {
-      // STEP 1: Send ALL final updates to RTDB in ONE batched write
-      // This is much more efficient than individual writes (1 write instead of N)
-      const batchUpdates = {};
+      const rtdbBatchUpdates = {};
+      const firestoreBatchUpdates = [];
+      const historyEntries = [];
+      
       for (const id of ids) {
         const finalState = finalStates[id];
-        if (finalState &&
-            typeof finalState.x === 'number' &&
-            typeof finalState.y === 'number' &&
-            typeof finalState.width === 'number' &&
-            typeof finalState.height === 'number') {
-          batchUpdates[id] = finalState;
-        }
-      }
-      
-      if (Object.keys(batchUpdates).length > 0) {
-        await realtimeShapes.updateEditingShapesBatch(batchUpdates, true);
-      }
-      
-      // STEP 2: Commit all shapes to Firestore in parallel
-      const updatePromises = ids.map(async (id) => {
-        const finalState = finalStates[id];
-        if (finalState &&
-            typeof finalState.x === 'number' &&
-            typeof finalState.y === 'number' &&
-            typeof finalState.width === 'number' &&
-            typeof finalState.height === 'number') {
+        if (
+          finalState &&
+          typeof finalState.x === 'number' &&
+          typeof finalState.y === 'number' &&
+          typeof finalState.width === 'number' &&
+          typeof finalState.height === 'number'
+        ) {
+          rtdbBatchUpdates[id] = finalState;
           
           const updatePayload = {
             x: finalState.x,
@@ -373,22 +405,36 @@ export const CanvasProvider = ({ children }) => {
           if (finalState.fontSize !== undefined) {
             updatePayload.fontSize = finalState.fontSize;
           }
-          
-          await shapeService.updateShape(id, updatePayload);
-        }
-      });
 
-      // Wait for all Firestore writes to complete
-      await Promise.all(updatePromises);
+          firestoreBatchUpdates.push({ id, updates: updatePayload });
+
+          const beforeShape = editSessionStartRef.current.get(id) || firestoreShapes.find((s) => s.id === id);
+          const entry = buildUpdateEntry(id, updatePayload, beforeShape);
+          if (entry) {
+            historyEntries.push(entry);
+          }
+        }
+      }
       
-      // STEP 3: Wait for Firestore to propagate to other clients
-      // Prevents ghost shapes - ensures all clients see Firestore data before RTDB clears
-      await new Promise(resolve => setTimeout(resolve, 400));
+      if (Object.keys(rtdbBatchUpdates).length > 0) {
+        await realtimeShapes.updateEditingShapesBatch(rtdbBatchUpdates, true);
+      }
       
-      // STEP 4: Clear active edits for shapes still selected; release locks for deselected
+      if (firestoreBatchUpdates.length > 0) {
+        await shapeService.batchUpdateShapes(firestoreBatchUpdates);
+        if (historyEntries.length > 0) {
+          recordBatchEdit(historyEntries, {
+            action: historyEntries.length > 1 ? 'BATCH_UPDATE' : 'UPDATE',
+            description: historyEntries.length > 1 ? 'Multi-shape transform' : 'Shape transform',
+          });
+        }
+      }
+      
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      
       const stillSelected = new Set(Array.from(selectedIds));
-      const toKeepLocked = ids.filter(id => stillSelected.has(id));
-      const toRelease = ids.filter(id => !stillSelected.has(id));
+      const toKeepLocked = ids.filter((id) => stillSelected.has(id));
+      const toRelease = ids.filter((id) => !stillSelected.has(id));
       if (toKeepLocked.length > 0) {
         await realtimeShapes.clearActiveEdits(toKeepLocked);
       }
@@ -397,6 +443,8 @@ export const CanvasProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Error finishing multi-shape edit:', error);
+    } finally {
+      ids.forEach((id) => editSessionStartRef.current.delete(id));
     }
   };
 
@@ -435,13 +483,19 @@ export const CanvasProvider = ({ children }) => {
           updatePayload.fontSize = stateToCommit.fontSize;
         }
 
-        // Wait for Firestore write to complete
+        const beforeShape = editSessionStartRef.current.get(id) || firestoreShapes.find((s) => s.id === id);
+        const historyEntry = buildUpdateEntry(id, updatePayload, beforeShape);
+
         await shapeService.updateShape(id, updatePayload);
+
+        if (historyEntry) {
+          recordBatchEdit([historyEntry], {
+            action: 'UPDATE',
+            description: 'Shape transform',
+          });
+        }
         
-        // STEP 3: Wait for Firestore to propagate to other clients
-        // This prevents ghost shapes where RTDB clears before Firestore syncs
-        // 400ms is conservative but ensures reliable sync across clients
-        await new Promise(resolve => setTimeout(resolve, 400));
+        await new Promise((resolve) => setTimeout(resolve, 400));
       } else {
         console.warn('Skipping Firestore commit - invalid or incomplete shape data', { id, stateToCommit });
       }
@@ -455,6 +509,8 @@ export const CanvasProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Error finishing shape edit:', error);
+    } finally {
+      editSessionStartRef.current.delete(id);
     }
   };
 
@@ -474,6 +530,9 @@ export const CanvasProvider = ({ children }) => {
 
       // Get shape state before deleting (for undo)
       const shapeBefore = firestoreShapes.find(s => s.id === id);
+      
+      // Clean up RTDB state (in case shape was being edited)
+      await realtimeShapes.clearActiveEdit(id);
       
       await shapeService.deleteShape(id);
       
@@ -501,20 +560,27 @@ export const CanvasProvider = ({ children }) => {
     if (existingLock && existingLock.lockedBy && existingLock.lockedBy !== currentUser.uid) {
       return; // can't select if locked by someone else
     }
+    
+    // OPTIMISTIC: Update UI immediately (zero lag for local user)
+    setSelectedIds(new Set([id]));
+    
+    // Then acquire lock in background
     const acquired = await realtimeShapes.acquireLock(id, currentUser.uid);
     if (acquired) {
-      // release locks for any previously selected shapes that are not this one
+      // Release previous locks in background
       if (selectedIds.size > 0) {
         const prev = Array.from(selectedIds).filter(sid => sid !== id);
         if (prev.length > 0) {
           realtimeShapes.releaseLocks(prev, currentUser.uid).catch(() => {});
         }
       }
-      const shape = firestoreShapes.find((s) => s.id === id);
-      if (shape) {
-        console.log(`[SELECT] ${shape.type}`, { id: shape.id, x: shape.x, y: shape.y, type: shape.type });
-      }
-      setSelectedIds(new Set([id]));
+    } else {
+      // Rollback if lock failed
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -556,20 +622,56 @@ export const CanvasProvider = ({ children }) => {
   // Select multiple shapes (acquire locks, replaces current selection)
   const selectMultiple = async (ids) => {
     if (!currentUser || !ids || ids.length === 0) return;
+    
     // Filter out shapes locked by others
     const candidates = ids.filter((id) => {
       const l = locks[id];
       return !(l && l.lockedBy && l.lockedBy !== currentUser.uid);
     });
-    const { acquired } = await realtimeShapes.acquireLocks(candidates, currentUser.uid);
-    // Release locks that were previously selected but not in acquired
-    const toRelease = Array.from(selectedIds).filter(id => !acquired.includes(id));
+    
+    // OPTIMISTIC: Update UI immediately (zero lag for local user)
+    setSelectedIds(new Set(candidates));
+    
+    // Add optimistic locks immediately (shows lock borders without waiting for RTDB)
+    const optimisticLockUpdates = {};
+    for (const id of candidates) {
+      optimisticLockUpdates[id] = {
+        lockedBy: currentUser.uid,
+        lockedAt: Date.now(),
+      };
+    }
+    setOptimisticLocks(optimisticLockUpdates);
+    
+    // Then acquire locks in background (batched RTDB write)
+    const { acquired, failed } = await realtimeShapes.acquireLocks(candidates, currentUser.uid);
+    
+    // If some locks failed, rollback
+    if (failed.length > 0) {
+      setSelectedIds(new Set(acquired));
+      // Remove failed locks from optimistic
+      setOptimisticLocks(prev => {
+        const updated = { ...prev };
+        for (const id of failed) {
+          delete updated[id];
+        }
+        return updated;
+      });
+    }
+    
+    // Release previously selected locks in background
+    const toRelease = Array.from(selectedIds).filter(id => !candidates.includes(id));
     if (toRelease.length > 0) {
+      // Remove from optimistic locks
+      setOptimisticLocks(prev => {
+        const updated = { ...prev };
+        for (const id of toRelease) {
+          delete updated[id];
+        }
+        return updated;
+      });
+      // Release in RTDB
       realtimeShapes.releaseLocks(toRelease, currentUser.uid).catch(() => {});
     }
-    const selectedShapes = acquired.map(id => firestoreShapes.find((s) => s.id === id)).filter(Boolean);
-    console.log(`[SELECT] ${selectedShapes.length} shapes`, selectedShapes.map(s => ({ id: s.id, x: s.x, y: s.y, type: s.type })));
-    setSelectedIds(new Set(acquired));
   };
 
   // Add shapes to current selection (acquire locks)
@@ -634,13 +736,15 @@ export const CanvasProvider = ({ children }) => {
 
   // Clear all selection (release all locks)
   const deselectAll = async () => {
+    // OPTIMISTIC: Clear UI immediately
+    setSelectedIds(new Set());
+    setOptimisticLocks({});
+    
+    // Then release locks in RTDB (batched, in background)
     if (currentUser && selectedIds.size > 0) {
       const idsToRelease = Array.from(selectedIds);
-      const deselectedShapes = idsToRelease.map(id => firestoreShapes.find((s) => s.id === id)).filter(Boolean);
-      console.log(`[DESELECT] Cleared ${deselectedShapes.length} shapes`, deselectedShapes.map(s => ({ id: s.id, x: s.x, y: s.y, type: s.type })));
       realtimeShapes.releaseLocks(idsToRelease, currentUser.uid).catch(() => {});
     }
-    setSelectedIds(new Set());
   };
 
   // Backward compatibility: deselect shape
@@ -663,121 +767,324 @@ export const CanvasProvider = ({ children }) => {
   };
 
   // ========== UNDO/REDO SYSTEM (Server-State Based) ==========
-  // Track recent edits with their "before" state from server
   const [editHistory, setEditHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const MAX_HISTORY = 50;
-  const isUndoRedoOperationRef = useRef(false); // Flag to prevent recording undo/redo actions
+  const isUndoRedoOperationRef = useRef(false);
   
   const canUndo = editHistory.length > 0;
   const canRedo = redoStack.length > 0;
-  
-  // Record an edit (called when user modifies a shape)
-  const recordEdit = (shapeId, beforeState, afterState, action) => {
-    // Don't record if this is an undo/redo operation
-    if (isUndoRedoOperationRef.current) return;
-    
+
+  const clearSelectionForShape = (shapeId) => {
+    setSelectedIds((prev) => {
+      if (!prev.has(shapeId)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.delete(shapeId);
+      return next;
+    });
+  };
+
+  const areValuesEqual = (a, b) => {
+    if (a === b) return true;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i += 1) {
+        if (!areValuesEqual(a[i], b[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      const aKeys = Object.keys(a);
+      const bKeys = Object.keys(b);
+      if (aKeys.length !== bKeys.length) return false;
+      for (const key of aKeys) {
+        if (!areValuesEqual(a[key], b[key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const getSnapshotForShape = (id) => {
+    if (editSessionStartRef.current.has(id)) {
+      return editSessionStartRef.current.get(id);
+    }
+    const shape = firestoreShapes.find((s) => s.id === id);
+    return shape ? { ...shape } : null;
+  };
+
+  const buildUpdateEntry = (id, updatePayload, beforeShapeOverride = null) => {
+    const beforeShape = beforeShapeOverride ? { ...beforeShapeOverride } : getSnapshotForShape(id);
+    const beforeState = {};
+    const afterState = {};
+    let hasChanges = false;
+
+    Object.entries(updatePayload).forEach(([key, value]) => {
+      const beforeValue = beforeShape ? beforeShape[key] : undefined;
+      if (!areValuesEqual(beforeValue, value)) {
+        beforeState[key] = beforeValue ?? null;
+        afterState[key] = value;
+        hasChanges = true;
+      }
+    });
+
+    if (!hasChanges) {
+      return null;
+    }
+
+    return {
+      shapeId: id,
+      action: 'UPDATE',
+      beforeState,
+      afterState,
+    };
+  };
+
+  const cloneState = (state) => {
+    if (state === undefined || state === null) {
+      return null;
+    }
+    return JSON.parse(JSON.stringify(state));
+  };
+
+  const deriveBatchAction = (entries, overrideAction) => {
+    if (overrideAction) {
+      return overrideAction;
+    }
+    if (entries.length === 1) {
+      return entries[0].action;
+    }
+    const uniqueActions = Array.from(new Set(entries.map((entry) => entry.action)));
+    if (uniqueActions.length === 1) {
+      return `BATCH_${uniqueActions[0]}`;
+    }
+    return 'BATCH';
+  };
+
+  const recordBatchEdit = (entries, options = {}) => {
+    if (isUndoRedoOperationRef.current) {
+      return null;
+    }
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return null;
+    }
+
+    const sanitizedEntries = entries
+      .map((entry) => {
+        if (!entry || !entry.shapeId || !entry.action) {
+          return null;
+        }
+        return {
+          shapeId: entry.shapeId,
+          action: entry.action,
+          beforeState: cloneState(entry.beforeState),
+          afterState: cloneState(entry.afterState),
+        };
+      })
+      .filter(Boolean);
+
+    if (sanitizedEntries.length === 0) {
+      return null;
+    }
+
     const edit = {
       id: `edit-${Date.now()}-${Math.random()}`,
       timestamp: Date.now(),
       userId: currentUser?.uid,
-      action, // 'CREATE', 'DELETE', 'UPDATE'
-      shapeId,
-      beforeState,
-      afterState,
+      action: deriveBatchAction(sanitizedEntries, options.action),
+      entries: sanitizedEntries,
+      description: options.description || null,
     };
-    
-    setEditHistory(prev => {
+
+    setEditHistory((prev) => {
       const newHistory = [...prev, edit];
-      // Limit history size
       if (newHistory.length > MAX_HISTORY) {
         newHistory.shift();
       }
       return newHistory;
     });
-    
-    // Clear redo stack when new edit is made
+
     setRedoStack([]);
-    
-    console.log('[History] Recorded', action, 'for shape', shapeId);
+
+    console.log(
+      `[History] Recorded ${edit.action} (${sanitizedEntries.length} entr${sanitizedEntries.length === 1 ? 'y' : 'ies'})`
+    );
+
+    return edit;
   };
-  
-  const undo = async () => {
-    if (!canUndo) return;
-    
-    const lastEdit = editHistory[editHistory.length - 1];
-    console.log('[Undo] Reverting', lastEdit.action, 'for shape', lastEdit.shapeId);
-    
-    // Set flag to prevent recording this operation
-    isUndoRedoOperationRef.current = true;
-    
-    try {
-      if (lastEdit.action === 'CREATE') {
-        // Undo create = delete the shape
-        // Check if shape still exists first
-        const shapeExists = firestoreShapes.find(s => s.id === lastEdit.shapeId);
+
+  const recordEdit = (shapeId, beforeState, afterState, action) => {
+    if (!shapeId || !action) {
+      return null;
+    }
+    return recordBatchEdit(
+      [
+        {
+          shapeId,
+          action,
+          beforeState,
+          afterState,
+        },
+      ],
+      { action }
+    );
+  };
+
+  const getEntriesFromEdit = (edit) => {
+    if (!edit) return [];
+    if (Array.isArray(edit.entries) && edit.entries.length > 0) {
+      return edit.entries;
+    }
+    if (edit.action && edit.shapeId) {
+      return [
+        {
+          action: edit.action,
+          shapeId: edit.shapeId,
+          beforeState: edit.beforeState ?? null,
+          afterState: edit.afterState ?? null,
+        },
+      ];
+    }
+    return [];
+  };
+
+  const applyUndoEntry = async (entry) => {
+    switch (entry.action) {
+      case 'CREATE': {
+        console.log('[Undo] Reverting CREATE for shape', entry.shapeId);
+        const shapeExists = firestoreShapes.find((s) => s.id === entry.shapeId);
         if (shapeExists) {
-          await shapeService.deleteShape(lastEdit.shapeId);
-          // Also clear from selection if selected
-          if (selectedIds.has(lastEdit.shapeId)) {
-            const newSelection = new Set(selectedIds);
-            newSelection.delete(lastEdit.shapeId);
-            setSelectedIds(newSelection);
-          }
+          await shapeService.deleteShape(entry.shapeId);
+          clearSelectionForShape(entry.shapeId);
         } else {
-          console.warn('[Undo] Shape already deleted by another user:', lastEdit.shapeId);
+          console.warn('[Undo] Shape already deleted by another user:', entry.shapeId);
         }
-      } else if (lastEdit.action === 'DELETE') {
-        // Undo delete = recreate the shape
-        // Check if a shape with this ID already exists (someone else might have recreated it)
-        const shapeExists = firestoreShapes.find(s => s.id === lastEdit.shapeId);
+        break;
+      }
+      case 'DELETE': {
+        console.log('[Undo] Reverting DELETE for shape', entry.shapeId);
+        const shapeExists = firestoreShapes.find((s) => s.id === entry.shapeId);
         if (shapeExists) {
-          console.warn('[Undo] Cannot undo delete - shape already recreated by another user:', lastEdit.shapeId);
-          // Skip this undo but still move it to redo stack for consistency
-        } else {
-          // Safe to recreate - use setDoc with merge to handle edge cases
-          const { id, updatedAt, lockedBy, ...shapeData } = lastEdit.beforeState;
-          
-          // Use setDoc instead of createShape to have more control
-          const shapeRef = doc(db, 'shapes', lastEdit.shapeId);
+          console.warn(
+            '[Undo] Cannot undo delete - shape already recreated by another user:',
+            entry.shapeId
+          );
+        } else if (entry.beforeState) {
+          const { id, updatedAt, lockedBy, ...shapeData } = entry.beforeState;
+          const shapeRef = doc(db, 'shapes', entry.shapeId);
           await setDoc(shapeRef, {
             ...shapeData,
-            id: lastEdit.shapeId,
+            id: entry.shapeId,
             canvasId: CANVAS_ID,
-            createdAt: lastEdit.beforeState.createdAt || new Date().toISOString(),
+            createdAt: entry.beforeState.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            createdBy: lastEdit.beforeState.createdBy || currentUser.uid,
+            createdBy: entry.beforeState.createdBy || currentUser.uid,
           });
-          
-          console.log('[Undo] Shape recreated with ID:', lastEdit.shapeId);
-          console.log('[Undo] Waiting for Firestore sync (500ms)...');
-          
-          // CRITICAL: Wait for Firestore to sync to all clients before considering complete
-          // This prevents ghost shapes and ensures shape appears for all users
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
-      } else if (lastEdit.action === 'UPDATE') {
-        // Undo update = restore previous state
-        // Check if shape still exists
-        const shapeExists = firestoreShapes.find(s => s.id === lastEdit.shapeId);
-        if (shapeExists) {
-          await shapeService.updateShape(lastEdit.shapeId, lastEdit.beforeState);
-        } else {
-          console.warn('[Undo] Cannot undo update - shape was deleted:', lastEdit.shapeId);
-        }
+        break;
       }
-      
-      // Move from history to redo stack
-      setEditHistory(prev => prev.slice(0, -1));
-      setRedoStack(prev => [...prev, lastEdit]);
+      case 'UPDATE': {
+        console.log('[Undo] Reverting UPDATE for shape', entry.shapeId);
+        const shapeExists = firestoreShapes.find((s) => s.id === entry.shapeId);
+        if (shapeExists && entry.beforeState) {
+          await shapeService.updateShape(entry.shapeId, entry.beforeState);
+        } else if (!shapeExists) {
+          console.warn('[Undo] Cannot undo update - shape was deleted:', entry.shapeId);
+        }
+        break;
+      }
+      default: {
+        console.warn('[Undo] Unknown action type:', entry.action);
+      }
+    }
+  };
+
+  const applyRedoEntry = async (entry) => {
+    switch (entry.action) {
+      case 'CREATE': {
+        console.log('[Redo] Re-applying CREATE for shape', entry.shapeId);
+        const shapeExists = firestoreShapes.find((s) => s.id === entry.shapeId);
+        if (shapeExists) {
+          console.warn('[Redo] Shape already exists:', entry.shapeId);
+        } else if (entry.afterState) {
+          const { id, updatedAt, lockedBy, ...shapeData } = entry.afterState;
+          const shapeRef = doc(db, 'shapes', entry.shapeId);
+          await setDoc(shapeRef, {
+            ...shapeData,
+            id: entry.shapeId,
+            canvasId: CANVAS_ID,
+            createdAt: entry.afterState.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdBy: entry.afterState.createdBy || currentUser.uid,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        break;
+      }
+      case 'DELETE': {
+        console.log('[Redo] Re-applying DELETE for shape', entry.shapeId);
+        const shapeExists = firestoreShapes.find((s) => s.id === entry.shapeId);
+        if (shapeExists) {
+          await shapeService.deleteShape(entry.shapeId);
+          clearSelectionForShape(entry.shapeId);
+        } else {
+          console.warn('[Redo] Shape already deleted:', entry.shapeId);
+        }
+        break;
+      }
+      case 'UPDATE': {
+        console.log('[Redo] Re-applying UPDATE for shape', entry.shapeId);
+        const shapeExists = firestoreShapes.find((s) => s.id === entry.shapeId);
+        if (shapeExists && entry.afterState) {
+          await shapeService.updateShape(entry.shapeId, entry.afterState);
+        } else if (!shapeExists) {
+          console.warn('[Redo] Cannot redo update - shape was deleted:', entry.shapeId);
+        }
+        break;
+      }
+      default: {
+        console.warn('[Redo] Unknown action type:', entry.action);
+      }
+    }
+  };
+
+  const undo = async () => {
+    if (!canUndo) return;
+
+    const lastEdit = editHistory[editHistory.length - 1];
+    const entries = getEntriesFromEdit(lastEdit);
+
+    if (entries.length === 0) {
+      setEditHistory((prev) => prev.slice(0, -1));
+      setRedoStack((prev) => [...prev, lastEdit]);
+      return;
+    }
+
+    console.log(
+      `[Undo] Applying edit ${lastEdit.id} (${lastEdit.action}) with ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}`
+    );
+
+    isUndoRedoOperationRef.current = true;
+
+    try {
+      for (let i = entries.length - 1; i >= 0; i -= 1) {
+        await applyUndoEntry(entries[i]);
+      }
+
+      setEditHistory((prev) => prev.slice(0, -1));
+      setRedoStack((prev) => [...prev, lastEdit]);
     } catch (error) {
       console.error('[Undo] Failed:', error);
-      // Don't crash - just log and continue
-      // Still move edit to redo stack so user can try again
-      setEditHistory(prev => prev.slice(0, -1));
-      setRedoStack(prev => [...prev, lastEdit]);
+      setEditHistory((prev) => prev.slice(0, -1));
+      setRedoStack((prev) => [...prev, lastEdit]);
     } finally {
-      // Clear flag
       isUndoRedoOperationRef.current = false;
     }
   };
@@ -786,68 +1093,32 @@ export const CanvasProvider = ({ children }) => {
     if (!canRedo) return;
     
     const lastUndo = redoStack[redoStack.length - 1];
-    console.log('[Redo] Re-applying', lastUndo.action, 'for shape', lastUndo.shapeId);
+    const entries = getEntriesFromEdit(lastUndo);
+
+    if (entries.length === 0) {
+      setRedoStack((prev) => prev.slice(0, -1));
+      setEditHistory((prev) => [...prev, lastUndo]);
+      return;
+    }
+
+    console.log(
+      `[Redo] Applying edit ${lastUndo.id} (${lastUndo.action}) with ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}`
+    );
     
-    // Set flag to prevent recording this operation
     isUndoRedoOperationRef.current = true;
     
     try {
-      if (lastUndo.action === 'CREATE') {
-        // Redo create = recreate the shape
-        // Check if shape already exists
-        const shapeExists = firestoreShapes.find(s => s.id === lastUndo.shapeId);
-        if (shapeExists) {
-          console.warn('[Redo] Shape already exists:', lastUndo.shapeId);
-        } else {
-          // Use setDoc for full control
-          const { id, updatedAt, lockedBy, ...shapeData } = lastUndo.afterState;
-          const shapeRef = doc(db, 'shapes', lastUndo.shapeId);
-          await setDoc(shapeRef, {
-            ...shapeData,
-            id: lastUndo.shapeId,
-            canvasId: CANVAS_ID,
-            createdAt: lastUndo.afterState.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            createdBy: lastUndo.afterState.createdBy || currentUser.uid,
-          });
-          
-          console.log('[Redo] Shape recreated, waiting for sync...');
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } else if (lastUndo.action === 'DELETE') {
-        // Redo delete = delete again
-        const shapeExists = firestoreShapes.find(s => s.id === lastUndo.shapeId);
-        if (shapeExists) {
-          await shapeService.deleteShape(lastUndo.shapeId);
-          // Also clear from selection if selected
-          if (selectedIds.has(lastUndo.shapeId)) {
-            const newSelection = new Set(selectedIds);
-            newSelection.delete(lastUndo.shapeId);
-            setSelectedIds(newSelection);
-          }
-        } else {
-          console.warn('[Redo] Shape already deleted:', lastUndo.shapeId);
-        }
-      } else if (lastUndo.action === 'UPDATE') {
-        // Redo update = apply the change again
-        const shapeExists = firestoreShapes.find(s => s.id === lastUndo.shapeId);
-        if (shapeExists) {
-          await shapeService.updateShape(lastUndo.shapeId, lastUndo.afterState);
-        } else {
-          console.warn('[Redo] Cannot redo update - shape was deleted:', lastUndo.shapeId);
-        }
+      for (const entry of entries) {
+        await applyRedoEntry(entry);
       }
       
-      // Move from redo stack back to history
-      setRedoStack(prev => prev.slice(0, -1));
-      setEditHistory(prev => [...prev, lastUndo]);
+      setRedoStack((prev) => prev.slice(0, -1));
+      setEditHistory((prev) => [...prev, lastUndo]);
     } catch (error) {
       console.error('[Redo] Failed:', error);
-      // Don't crash - just log and continue
-      setRedoStack(prev => prev.slice(0, -1));
-      setEditHistory(prev => [...prev, lastUndo]);
+      setRedoStack((prev) => prev.slice(0, -1));
+      setEditHistory((prev) => [...prev, lastUndo]);
     } finally {
-      // Clear flag
       isUndoRedoOperationRef.current = false;
     }
   };
@@ -865,46 +1136,88 @@ export const CanvasProvider = ({ children }) => {
   const pasteFromClipboard = async () => {
     if (!clipboard || clipboard.length === 0) return;
     
-    console.log('[Paste] Pasting', clipboard.length, 'shapes');
+    const shapeCount = clipboard.length;
+    console.log('[Paste] Pasting', shapeCount, 'shapes');
     
-    // Calculate visible viewport bounds
-    const stage = stageRef.current;
-    if (!stage) return;
+    // Show loading state for large operations
+    if (shapeCount > 20) {
+      setBatchOperationLoading(true);
+      setBatchOperationProgress({ current: 0, total: shapeCount, operation: 'Pasting' });
+    }
     
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // Get canvas coordinates for viewport center
-    const transform = stage.getAbsoluteTransform().copy().invert();
-    const viewportCenter = transform.point({ x: viewportWidth / 2, y: viewportHeight / 2 });
-    
-    // Calculate bounding box of clipboard shapes
-    if (clipboard.length > 0) {
-      const xs = clipboard.map(s => s.x);
-      const ys = clipboard.map(s => s.y);
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
+    try {
+      // Calculate visible viewport bounds
+      const stage = stageRef.current;
+      if (!stage) return;
       
-      // Calculate offset to center clipboard content at viewport center
-      const offsetX = viewportCenter.x - minX - 50; // Small offset so not perfectly centered
-      const offsetY = viewportCenter.y - minY - 50;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
       
-      const newIds = [];
+      // Get canvas coordinates for viewport center
+      const transform = stage.getAbsoluteTransform().copy().invert();
+      const viewportCenter = transform.point({ x: viewportWidth / 2, y: viewportHeight / 2 });
       
-      for (const shape of clipboard) {
-        const { id, createdAt, updatedAt, createdBy, lockedBy, ...shapeData } = shape;
-        const newShape = {
-          ...shapeData,
-          x: shapeData.x + offsetX,
-          y: shapeData.y + offsetY,
-        };
-        const newId = await addShape(newShape);
-        if (newId) newIds.push(newId);
+      // Calculate bounding box of clipboard shapes
+      if (clipboard.length > 0) {
+        const xs = clipboard.map(s => s.x);
+        const ys = clipboard.map(s => s.y);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        
+        // Calculate offset to center clipboard content at viewport center
+        const offsetX = viewportCenter.x - minX - 50; // Small offset so not perfectly centered
+        const offsetY = viewportCenter.y - minY - 50;
+        
+        // Generate IDs immediately for optimistic UI
+        const newIds = [];
+        const shapesToCreate = clipboard.map(shape => {
+          const { id, createdAt, updatedAt, createdBy, lockedBy, ...shapeData } = shape;
+          const newId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          newIds.push(newId);
+          return {
+            ...shapeData,
+            id: newId, // Include ID in the shape
+            x: shapeData.x + offsetX,
+            y: shapeData.y + offsetY,
+            createdBy: currentUser.uid,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        });
+        
+        // OPTIMISTIC UI: Show shapes immediately
+        setOptimisticShapes(prev => [...prev, ...shapesToCreate]);
+        
+        // Use batch create for much better performance (1 network call instead of N)
+        const confirmedIds = await shapeService.batchCreateShapes(shapesToCreate);
+        
+        // Clear optimistic shapes (they'll now come from Firestore)
+        setOptimisticShapes(prev => prev.filter(s => !confirmedIds.includes(s.id)));
+        
+        const historyEntries = confirmedIds.map((newId, index) => ({
+          shapeId: newId,
+          action: 'CREATE',
+          beforeState: null,
+          afterState: { ...shapesToCreate[index], id: newId },
+        })).filter(Boolean);
+
+        if (historyEntries.length > 0) {
+          recordBatchEdit(historyEntries, {
+            action: historyEntries.length > 1 ? 'BATCH_CREATE' : 'CREATE',
+            description: historyEntries.length > 1 ? 'Paste shapes' : 'Paste shape',
+          });
+        }
+        
+        // Select the newly pasted shapes
+        if (confirmedIds.length > 0) {
+          setTimeout(() => selectMultiple(confirmedIds), 100);
+        }
       }
-      
-      // Select the newly pasted shapes
-      if (newIds.length > 0) {
-        setTimeout(() => selectMultiple(newIds), 100);
+    } finally {
+      // Clear loading state
+      if (shapeCount > 20) {
+        setBatchOperationLoading(false);
+        setBatchOperationProgress({ current: 0, total: 0, operation: '' });
       }
     }
   };
@@ -913,21 +1226,21 @@ export const CanvasProvider = ({ children }) => {
     if (selectedIds.size === 0) return;
     
     const selectedShapes = firestoreShapes.filter(s => selectedIds.has(s.id));
-    console.log('[Duplicate] Duplicating', selectedShapes.length, 'shapes');
+    const shapeCount = selectedShapes.length;
+    console.log('[Duplicate] Duplicating', shapeCount, 'shapes');
     
-    // Smart offset: 20px, but ensure shapes stay in viewport
-    const stage = stageRef.current;
-    if (!stage) return;
+    // Show loading state for large operations
+    if (shapeCount > 20) {
+      setBatchOperationLoading(true);
+      setBatchOperationProgress({ current: 0, total: shapeCount, operation: 'Duplicating' });
+    }
     
-    const offset = 20;
-    const newIds = [];
-    
-    for (const shape of selectedShapes) {
-      const { id, createdAt, updatedAt, createdBy, lockedBy, ...shapeData } = shape;
+    try {
+      // Smart offset: 20px, but ensure shapes stay in viewport
+      const stage = stageRef.current;
+      if (!stage) return;
       
-      // Calculate new position with offset
-      let newX = shapeData.x + offset;
-      let newY = shapeData.y + offset;
+      const offset = 20;
       
       // Get viewport bounds in canvas coordinates
       const transform = stage.getAbsoluteTransform().copy().invert();
@@ -937,34 +1250,77 @@ export const CanvasProvider = ({ children }) => {
         y: window.innerHeight 
       });
       
-      // Check if new position would be mostly offscreen
-      const shapeWidth = shapeData.width || 100;
-      const shapeHeight = shapeData.height || 100;
+      // Generate IDs immediately for optimistic UI
+      const newIds = [];
+      const shapesToCreate = selectedShapes.map(shape => {
+        const { id, createdAt, updatedAt, createdBy, lockedBy, ...shapeData } = shape;
+        const newId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        newIds.push(newId);
+        
+        // Calculate new position with offset
+        let newX = shapeData.x + offset;
+        let newY = shapeData.y + offset;
+        
+        // Check if new position would be mostly offscreen
+        const shapeWidth = shapeData.width || 100;
+        const shapeHeight = shapeData.height || 100;
+        
+        // If more than 75% would be offscreen, place near viewport center instead
+        if (newX + shapeWidth * 0.25 > viewportBottomRight.x ||
+            newY + shapeHeight * 0.25 > viewportBottomRight.y ||
+            newX + shapeWidth * 0.75 < viewportTopLeft.x ||
+            newY + shapeHeight * 0.75 < viewportTopLeft.y) {
+          // Place near viewport center with small offset
+          const centerX = (viewportTopLeft.x + viewportBottomRight.x) / 2;
+          const centerY = (viewportTopLeft.y + viewportBottomRight.y) / 2;
+          newX = centerX - shapeWidth / 2 + offset;
+          newY = centerY - shapeHeight / 2 + offset;
+        }
+        
+        return {
+          ...shapeData,
+          id: newId, // Include ID in the shape
+          x: newX,
+          y: newY,
+          createdBy: currentUser.uid,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      });
       
-      // If more than 75% would be offscreen, place near viewport center instead
-      if (newX + shapeWidth * 0.25 > viewportBottomRight.x ||
-          newY + shapeHeight * 0.25 > viewportBottomRight.y ||
-          newX + shapeWidth * 0.75 < viewportTopLeft.x ||
-          newY + shapeHeight * 0.75 < viewportTopLeft.y) {
-        // Place near viewport center with small offset
-        const centerX = (viewportTopLeft.x + viewportBottomRight.x) / 2;
-        const centerY = (viewportTopLeft.y + viewportBottomRight.y) / 2;
-        newX = centerX - shapeWidth / 2 + offset;
-        newY = centerY - shapeHeight / 2 + offset;
+      // OPTIMISTIC UI: Show shapes immediately
+      setOptimisticShapes(prev => [...prev, ...shapesToCreate]);
+      
+      // Use batch create for much better performance (1 network call instead of N)
+      const confirmedIds = await shapeService.batchCreateShapes(shapesToCreate);
+      
+      // Clear optimistic shapes (they'll now come from Firestore)
+      setOptimisticShapes(prev => prev.filter(s => !confirmedIds.includes(s.id)));
+      
+      const historyEntries = confirmedIds.map((newId, index) => ({
+        shapeId: newId,
+        action: 'CREATE',
+        beforeState: null,
+        afterState: { ...shapesToCreate[index], id: newId },
+      })).filter(Boolean);
+
+      if (historyEntries.length > 0) {
+        recordBatchEdit(historyEntries, {
+          action: historyEntries.length > 1 ? 'BATCH_CREATE' : 'CREATE',
+          description: historyEntries.length > 1 ? 'Duplicate shapes' : 'Duplicate shape',
+        });
       }
       
-      const newShape = {
-        ...shapeData,
-        x: newX,
-        y: newY,
-      };
-      const newId = await addShape(newShape);
-      if (newId) newIds.push(newId);
-    }
-    
-    // Select the duplicated shapes
-    if (newIds.length > 0) {
-      setTimeout(() => selectMultiple(newIds), 100);
+      // Select the duplicated shapes
+      if (confirmedIds.length > 0) {
+        setTimeout(() => selectMultiple(confirmedIds), 100);
+      }
+    } finally {
+      // Clear loading state
+      if (shapeCount > 20) {
+        setBatchOperationLoading(false);
+        setBatchOperationProgress({ current: 0, total: 0, operation: '' });
+      }
     }
   };
   
@@ -984,11 +1340,26 @@ export const CanvasProvider = ({ children }) => {
       .filter(Boolean)
       .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
     
-    // Assign new zIndex values (max + 1, max + 2, etc.)
-    for (let i = 0; i < selectedShapesData.length; i++) {
-      await updateShape(selectedShapesData[i].id, {
+    // Prepare batch updates
+    const batchUpdates = selectedShapesData.map((shape, i) => ({
+      id: shape.id,
+      updates: {
         zIndex: maxZIndex + 1 + i,
-      });
+      }
+    }));
+    const historyEntries = batchUpdates
+      .map((update, index) => buildUpdateEntry(update.id, update.updates, selectedShapesData[index]))
+      .filter(Boolean);
+    
+    // Use batch update for much better performance (1 transaction instead of N)
+    if (batchUpdates.length > 0) {
+      await shapeService.batchUpdateShapes(batchUpdates);
+      if (historyEntries.length > 0) {
+        recordBatchEdit(historyEntries, {
+          action: historyEntries.length > 1 ? 'BATCH_UPDATE' : 'UPDATE',
+          description: 'Bring to front',
+        });
+      }
     }
     
     console.log('[BringToFront] Moved', selectedShapesData.length, 'shapes to front');
@@ -1007,12 +1378,27 @@ export const CanvasProvider = ({ children }) => {
       .filter(Boolean)
       .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
     
-    // Assign new zIndex values (min - N, min - N + 1, etc.)
+    // Prepare batch updates
     const count = selectedShapesData.length;
-    for (let i = 0; i < count; i++) {
-      await updateShape(selectedShapesData[i].id, {
+    const batchUpdates = selectedShapesData.map((shape, i) => ({
+      id: shape.id,
+      updates: {
         zIndex: minZIndex - count + i,
-      });
+      }
+    }));
+    const historyEntries = batchUpdates
+      .map((update, index) => buildUpdateEntry(update.id, update.updates, selectedShapesData[index]))
+      .filter(Boolean);
+    
+    // Use batch update for much better performance (1 transaction instead of N)
+    if (batchUpdates.length > 0) {
+      await shapeService.batchUpdateShapes(batchUpdates);
+      if (historyEntries.length > 0) {
+        recordBatchEdit(historyEntries, {
+          action: historyEntries.length > 1 ? 'BATCH_UPDATE' : 'UPDATE',
+          description: 'Send to back',
+        });
+      }
     }
     
     console.log('[SendToBack] Moved', selectedShapesData.length, 'shapes to back');
@@ -1024,15 +1410,71 @@ export const CanvasProvider = ({ children }) => {
     
     const idsToMove = Array.from(selectedIds);
     
-    // Update all selected shapes
+    // Prepare updates for both RTDB (real-time preview) and Firestore (persistence)
+    const rtdbBatchUpdates = {};
+    const firestoreBatchUpdates = [];
+    const historyEntries = [];
+    
     for (const id of idsToMove) {
       const shape = firestoreShapes.find(s => s.id === id);
       if (shape) {
-        await updateShape(id, {
-          x: shape.x + deltaX,
-          y: shape.y + deltaY,
+        const newX = shape.x + deltaX;
+        const newY = shape.y + deltaY;
+
+        if (shape.x === newX && shape.y === newY) {
+          continue;
+        }
+        
+        // RTDB update for real-time preview to other users
+        rtdbBatchUpdates[id] = {
+          x: newX,
+          y: newY,
+          width: shape.width,
+          height: shape.height,
+        };
+        
+        // Firestore update for persistence
+        firestoreBatchUpdates.push({
+          id,
+          updates: {
+            x: newX,
+            y: newY,
+          }
+        });
+
+        const entry = buildUpdateEntry(id, { x: newX, y: newY }, shape);
+        if (entry) {
+          historyEntries.push(entry);
+        }
+      }
+    }
+
+    if (firestoreBatchUpdates.length === 0) {
+      return;
+    }
+    
+    // Send to RTDB first for instant preview to other users
+    if (Object.keys(rtdbBatchUpdates).length > 0) {
+      await realtimeShapes.updateEditingShapesBatch(rtdbBatchUpdates, true);
+    }
+    
+    // Then commit to Firestore for persistence (1 transaction instead of N)
+    if (firestoreBatchUpdates.length > 0) {
+      await shapeService.batchUpdateShapes(firestoreBatchUpdates);
+      if (historyEntries.length > 0) {
+        recordBatchEdit(historyEntries, {
+          action: historyEntries.length > 1 ? 'BATCH_UPDATE' : 'UPDATE',
+          description: historyEntries.length > 1 ? 'Move selection' : 'Move shape',
         });
       }
+    }
+    
+    // Wait for Firestore propagation
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // Clear RTDB entries since shapes are now persisted
+    if (Object.keys(rtdbBatchUpdates).length > 0) {
+      await realtimeShapes.clearActiveEdits(idsToMove);
     }
   };
 
@@ -1072,6 +1514,8 @@ export const CanvasProvider = ({ children }) => {
     deleteShape,
     resetView,
     loading,
+    batchOperationLoading, // Loading state for large batch operations
+    batchOperationProgress, // Progress info for batch operations
     currentUser,
     locks, // Expose locks for checking lock state
     // Tool state
@@ -1107,4 +1551,3 @@ export const CanvasProvider = ({ children }) => {
     </CanvasContext.Provider>
   );
 };
-

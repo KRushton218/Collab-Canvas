@@ -409,35 +409,59 @@ const StylePanel = () => {
         />
       </div>
 
-      {/* Border thickness for rectangles and circles */}
+      {/* Border color and thickness for rectangles and circles */}
       {(selected.type === 'rectangle' || selected.type === 'circle') && (
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Border Thickness</div>
-          <input
-            type="number"
-            min="0"
-            max="20"
-            step="0.5"
-            value={selected.strokeWidth ?? 1}
-            onChange={(e) => {
-              const strokeWidth = Math.max(0, Math.min(20, Number(e.target.value) || 1));
-              if (isMultiSelect) {
-                updateAllSelected({ strokeWidth });
-              } else {
-                updateShape(selected.id, { strokeWidth });
-              }
-            }}
-            style={{
-              width: '100%',
-              height: '32px',
-              border: '1px solid rgba(0,0,0,0.1)',
-              borderRadius: '6px',
-              padding: '0 10px',
-            }}
-            placeholder="Border width (px)"
-            title="Border thickness in pixels"
-          />
-        </div>
+        <>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Border Color</div>
+            <input
+              type="color"
+              value={selected.stroke || '#e5e7eb'}
+              onChange={(e) => {
+                const stroke = e.target.value;
+                if (isMultiSelect) {
+                  updateAllSelected({ stroke });
+                } else {
+                  updateShape(selected.id, { stroke });
+                }
+              }}
+              style={{
+                width: '100%',
+                height: '40px',
+                border: '1px solid rgba(0,0,0,0.1)',
+                borderRadius: '6px',
+              }}
+              title="Border color"
+            />
+          </div>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Border Thickness</div>
+            <input
+              type="number"
+              min="0"
+              max="20"
+              step="0.5"
+              value={selected.strokeWidth ?? 1}
+              onChange={(e) => {
+                const strokeWidth = Math.max(0, Math.min(20, Number(e.target.value) || 1));
+                if (isMultiSelect) {
+                  updateAllSelected({ strokeWidth });
+                } else {
+                  updateShape(selected.id, { strokeWidth });
+                }
+              }}
+              style={{
+                width: '100%',
+                height: '32px',
+                border: '1px solid rgba(0,0,0,0.1)',
+                borderRadius: '6px',
+                padding: '0 10px',
+              }}
+              placeholder="Border width (px)"
+              title="Border thickness in pixels"
+            />
+          </div>
+        </>
       )}
 
       {/* Line thickness for lines */}
