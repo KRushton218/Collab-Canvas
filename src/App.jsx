@@ -13,13 +13,31 @@ import Canvas from './components/Canvas/Canvas';
 // Main App Content (after authentication)
 const AppContent = () => {
   const { currentUser } = useAuth();
-  const { onlineUsers, isStale, sessionStart } = usePresence(currentUser?.uid, currentUser?.displayName);
   const [showPresence, setShowPresence] = useState(false);
   const [showReconnectModal, setShowReconnectModal] = useState(false);
 
+  // Show login BEFORE initializing presence or any other services
+  if (!currentUser) {
+    return <Login />;
+  }
+
+  return <AuthenticatedApp 
+    currentUser={currentUser}
+    showPresence={showPresence}
+    setShowPresence={setShowPresence}
+    showReconnectModal={showReconnectModal}
+    setShowReconnectModal={setShowReconnectModal}
+  />;
+};
+
+// Authenticated App Content (only rendered when user is logged in)
+const AuthenticatedApp = ({ currentUser, showPresence, setShowPresence, showReconnectModal, setShowReconnectModal }) => {
+  // Initialize presence ONLY after authentication
+  const { onlineUsers, isStale, sessionStart } = usePresence(currentUser.uid, currentUser.displayName);
+
   // Check for stale session and show modal on any interaction
   useEffect(() => {
-    if (!isStale || !currentUser) return;
+    if (!isStale) return;
 
     const handleInteraction = () => {
       setShowReconnectModal(true);
@@ -35,22 +53,17 @@ const AppContent = () => {
       window.removeEventListener('keydown', handleInteraction);
       window.removeEventListener('touchstart', handleInteraction);
     };
-  }, [isStale, currentUser]);
-
-  // Show login BEFORE initializing CanvasProvider (don't load 641 shapes before login!)
-  if (!currentUser) {
-    return <Login />;
-  }
+  }, [isStale, setShowReconnectModal]);
 
   // Find current user's color from the online users list
-  const currentUserData = onlineUsers.find(u => u.userId === currentUser?.uid);
+  const currentUserData = onlineUsers.find(u => u.userId === currentUser.uid);
   const currentUserColor = currentUserData?.cursorColor || '#000000';
 
   // Count only non-idle users as "active"
   const activeUsersCount = onlineUsers.filter(u => !u.isIdle).length;
 
   const togglePresence = () => {
-    setShowPresence(!showPresence);
+    setShowPresence(prev => !prev);
   };
 
   const handleReconnect = () => {
@@ -78,7 +91,7 @@ const AppContent = () => {
           zIndex: 999,
           animation: 'slideDown 0.2s ease-out',
         }}>
-          <PresenceList users={onlineUsers} currentUserId={currentUser?.uid} />
+          <PresenceList users={onlineUsers} currentUserId={currentUser.uid} />
         </div>
       )}
       
