@@ -33,4 +33,5 @@ This branch creates a preserving, test-driven evaluation workflow for `scripts/e
 - Evaluator restores the original branch and stash is reapplied.
 - Results artifact exists and matches console output.
 
-
+### Research
+- See `BRANCH_GENESIS/RESEARCH.md` for ongoing documentation and findings.
