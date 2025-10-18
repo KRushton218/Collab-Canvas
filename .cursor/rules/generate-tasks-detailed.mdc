@@ -1,0 +1,133 @@
+---
+description: Generate PR-organized task lists from PRDs with exact file paths
+globs: docs/prd-*.md, docs/**/prd-*.md, docs/tasks-*.md, docs/**/tasks-*.md
+---
+
+# Rule: Generate Detailed Task Lists (Concise)
+
+## Goal
+Guide the assistant to produce clear, PR-organized task lists from a given PRD, with exact file paths and minimal, purposeful tests.
+
+## Output
+- Format: Markdown (`.md`)
+- Location: `docs/`
+- Filename: `tasks-[feature-name]-pr-[N].md` (one file per PR)
+
+## Process
+1. Read the specified PRD; extract functional requirements and success criteria.
+2. Check existing task files to get the next PR number.
+3. Decide how many PRs are needed (typically 2–6) for the sub-PRD.
+4. For each PR, generate a separate tasks file containing a single PR with 4–6 actionable subtasks.
+5. Every subtask lists exact files (new/edit). Include test files per PR.
+6. Save each tasks file to `docs/` using the prescribed filename.
+
+## Output Template (Single PR per file)
+```markdown
+# CollabCanvas — [Feature Name] Task List (Single Pull Request)
+
+> **Based on PRD:** `[prd-filename].md`  
+> **Stack:** React + Vite + TypeScript + Konva/react-konva + Zustand + Firebase (Auth + Firestore + RTDB) + Vercel (hosting) + Vercel AI SDK (agent)  
+> **Format:** Single PR with actionable subtasks and exact files.  
+> **Focus:** [Brief feature focus]
+
+---
+
+## PR [N] — [PR Title]
+**Goal:** [Clear, specific goal for this PR]
+
+- [ ] [Specific subtask]  
+  **Files:** `path/to/file.ts` (new/edit), `path/to/another.tsx` (edit)
+- [ ] [Specific subtask]  
+  **Files:** `path/to/file.ts` (new/edit)
+- [ ] [Specific subtask]  
+  **Files:** `path/to/file.ts` (new), `tests/[test].test.ts` (new)
+
+**Tests (bare-bones):** [What to verify at a glance]  
+- [ ] Add `[test-filename].test.ts` — [Specific behavior to verify]  
+  **Files:** `tests/[test-filename].test.ts` (new/edit)
+- [ ] Extend `[existing-test].test.tsx` — [Extension focus]  
+  **Files:** `tests/[existing-test].test.tsx` (edit)
+
+---
+
+## Known Issues & Future Improvements
+- **Targets:** [Feature-specific targets/metrics]
+- **Future Enhancements:**  
+  - [ ] **[Enhancement]**: [Brief description]
+
+---
+
+### Notes & Conventions
+- Keep tests surgical (hooks/utils/services preferred over heavy canvas UI).
+- Align PRD acceptance criteria to tasks; do not copy rubric points.
+- Include config/test files where needed; avoid unspecified files.
+```
+
+## PR Numbering
+- Determine the highest existing PR number from task files; continue from the next.
+
+## Multiple Task Documents per Sub-PRD
+- A sub-PRD may require several PRs. Generate one tasks file per PR (2–6 typical), each following the single-PR template above.
+
+## Subtask Requirements
+1. Clear action verb (Create/Implement/Update/Add/etc.)
+2. Specific description (what and why if non-obvious)
+3. Exact file listings with (new)/(edit)
+4. Logical progression within the PR
+
+## Hierarchical Subtasks (optional)
+- When helpful, nest subtasks under numbered parent tasks within a PR.
+- Use this format:
+```markdown
+- [ ] 1.0 Parent Task Title
+  - [ ] 1.1 [Sub-task description 1.1]
+  - [ ] 1.2 [Sub-task description 1.2]
+- [ ] 2.0 Parent Task Title
+  - [ ] 2.1 [Sub-task description 2.1]
+- [ ] 3.0 Parent Task Title (may not require sub-tasks if purely structural or configuration)
+```
+- Keep nesting to two levels (parent → sub-task). List files at the sub-task level.
+
+## File Specification
+- New: `path/to/file.ts` (new)
+- Edit: `path/to/file.ts` (edit)
+- Tests: Always list test files (new or edit) per PR
+
+## File Change Guidance
+- Listed files are suggestions. If investigation reveals a better approach, choose different files and add a brief "Deviation:" note under the sub-task with the chosen files.
+- Do not modify sensitive or unrelated files without justification.
+
+## Test Requirements
+- State a brief test approach per PR (bare-bones/integration/etc.)
+- Name specific test files; describe what they verify
+- Place tests under `tests/`
+
+## Quality Standards
+- Actionable, specific, complete, testable
+- 4–6 subtasks per PR (single PR per file)
+- Suitable for a junior developer to execute sequentially
+
+## Integration with Codebase
+- Follow existing structure and naming conventions
+- Consider dependencies and ordering across PRs
+
+## Examples
+
+Good Subtask:
+```
+- [ ] Implement `transforms.ts` service for RTDB operations (CRUD, subscriptions)  
+  **Files:** `src/services/transforms.ts` (new)
+```
+
+Good Test Spec:
+```
+**Tests (bare-bones):** Service and hook contracts.  
+- [ ] Add `transforms.service.test.ts` — CRUD + subscribe + error cases  
+  **Files:** `tests/transforms.service.test.ts` (new)
+```
+
+## Final Instructions
+1. Check PR numbering; continue sequentially.
+2. Generate multiple task documents per sub-PRD (one file per PR).
+3. List all files precisely; include tests per PR.
+4. Save to `docs/` with a descriptive filename.

@@ -1,0 +1,99 @@
+# Rule: Git Workflow for PR Development
+
+## Purpose
+
+Ensure proper git branch management during PR development to maintain clean version control history and prevent conflicts.
+
+## Trigger Conditions
+
+This rule applies when:
+- Working with files matching `docs/tasks/**/tasks-*.md` or `docs/**/tasks-*.md`
+- Starting work on a new pull request task list
+- Any task list file is opened or referenced in the conversation
+
+## Immediate Actions (Before Any Work)
+
+When a task list file is accessed or work begins on a PR:
+
+1. **Check current branch**: `git branch`
+2. **If not on feature branch**: Create feature branch using pattern `feature/[pr-name]`
+3. **Verify branch creation**: Confirm with `git branch`
+4. **Only then proceed** with task implementation
+
+## Feature Branch Naming Convention
+
+Use the pattern: `feature/[pr-name]`
+
+Examples:
+- `feature/auth-presence-pr-1`
+- `feature/canvas-core-pr-2`
+- `feature/persistence-pr-3`
+
+## Branch Creation Commands
+
+```bash
+# Create and switch to feature branch
+git checkout -b feature/[pr-name]
+
+# Verify branch creation
+git branch
+```
+
+## Workflow Protocol
+
+### **Feature Branch Creation (Start of New PR)**
+When beginning a new pull request task list:
+1. **Create feature branch**: `git checkout -b feature/[pr-name]`
+2. **Verify branch**: Confirm you're on the new feature branch with `git branch`
+3. **Note**: All work for this PR will be done on this feature branch
+
+### **Feature Branch Commit (End of PR)**
+After completing the summary and review:
+1. **Ask for approval**: "Ready to commit all changes to the feature branch. Proceed?"
+2. **Stage and commit**: `git add . && git commit -m "feat: [descriptive commit message]"`
+3. **Verify commit**: Confirm the commit was successful
+
+### **Merge to Develop Branch**
+After committing to feature branch:
+1. **Ask for permission**: "Ready to merge feature branch to local develop branch. Proceed?"
+2. **Switch to develop**: `git checkout develop`
+3. **Merge feature branch**: `git merge feature/[pr-name]`
+4. **Clean up**: `git branch -d feature/[pr-name]` (delete feature branch)
+
+### **Push to Remote Develop**
+After merging to local develop:
+1. **Ask for permission**: "Ready to push to remote develop branch. Proceed?"
+2. **Push if approved**: `git push origin develop`
+3. **Note**: User may choose not to push after every commit
+
+### **Merge to Main (Optional)**
+After pushing to remote develop:
+1. **Provide advice**: Assess if changes are ready for main branch
+2. **Ask for permission**: "Should we also merge to origin/main? [reasoning]"
+3. **Merge if approved**: 
+   - `git checkout main`
+   - `git pull origin main`
+   - `git merge develop`
+   - `git push origin main`
+
+## Enforcement
+
+- **Never start PR work** without being on the correct feature branch
+- **Always verify branch** before beginning any development work
+- **Follow the complete workflow** from branch creation to merge
+- **Ask for explicit permission** before any git operations
+
+## Benefits
+
+- Prevents accidental commits to develop/main branches
+- Maintains clean git history with feature-based commits
+- Enables proper code review workflow
+- Reduces merge conflicts and integration issues
+- Follows industry best practices for git workflow
+
+## Integration with Other Rules
+
+This rule works in conjunction with:
+- **commit-separation**: Ensures git operations are separate from development work
+- **process-task-list**: Provides the git workflow for task list management
+- **modern-react-nextjs**: Maintains clean development practices
