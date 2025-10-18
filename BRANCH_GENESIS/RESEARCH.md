@@ -42,6 +42,13 @@ Centralize research, references, and decisions for the Evaluator Tests PR-1. Thi
 - Quality: ESLint clean, unit tests green, type-level checks where applicable, deterministic outputs.
 
 #### Evaluation Dimensions and KPIs
+- Rubric Performance Gates (must meet):
+  - Frame rate: sustain 60 FPS during typical interactions; p95 frame time ≤ 16.7ms, p99 ≤ 33ms.
+  - Object scale: performant with 500 shapes baseline; stretch target: 1000+ objects at 60 FPS (rubric “excellent”).
+  - Concurrency: support 10+ concurrent users without falling below 60 FPS (rubric “excellent”).
+  - No “easy” drops below 60 FPS during common operations (drag, transform, select, zoom).
+  - Complexity: rendering O(visible), operations O(1) per shape via batching.
+  - Long tasks: none > 50ms on main thread during interactions; chunk work via rAF/idle.
 - Performance KPIs (headless/vitest):
   - Paste 50 shapes completes < 200ms; 100 shapes < 400ms (local env).
   - Multi-drag completion single Firestore batch; RTDB+Firestore = 2 network calls.
