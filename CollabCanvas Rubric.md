@@ -6,6 +6,27 @@
 
 ---
 
+## Automated Test Coverage vs Rubric (as of October 18, 2025)
+
+- Overall automated coverage: approximately 20–25% of rubric points. The remaining areas are validated via the manual user-story suite in `docs/testing-strategy.md`.
+
+- Breakdown by rubric section (approximate automated coverage; the rest is manual):
+  - Core Collaborative Infrastructure (30 pts): ~8 pts automated
+    - Unit tests cover presence data shape/subscribe logic (mocked RTDB), lock helper functions, and basic shape service wiring.
+    - Real-time latency targets, multi-user conflict behavior, and reconnection flows are exercised manually per the User Story Test Suite.
+  - Canvas Features & Performance (20 pts): ~4 pts automated
+    - Unit tests validate canvas constants, zoom limits, and bounds constraints. Performance/FPS and large-shape scenarios are manual.
+  - Shape Creation & Editing (within Canvas Feature rubric items): ~4 pts automated
+    - Unit tests verify create/update/delete calls and state transitions in `CanvasContext` with mocked services. Visual transformers and interaction UX are manual.
+  - Collaboration UX (presence UI, cursors, lock visuals): manual
+  - Commands/AI-driven scenarios and complex layout tasks: manual
+  - Security/Rules and deployment criteria: manual verification (see deployment docs).
+
+- Notes:
+  - 64/64 unit tests passing; evaluator smoke suites added for performance/realtime runners.
+  - See `docs/testing-strategy.md` for the complete manual User Story Test Suite covering the remaining rubric areas.
+
+
 ## Section 1: Core Collaborative Infrastructure (30 points)
 
 ### Real-Time Synchronization (12 points)

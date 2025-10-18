@@ -11,6 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
+    "test:performance": "vitest run tests/performance --reporter basic",
+    "test:realtime": "vitest run tests/realtime --reporter basic",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "firebase:login": "firebase login",

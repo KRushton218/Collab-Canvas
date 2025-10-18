@@ -995,6 +995,14 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             };
 
             const onStartEdit = async (e) => {
+              // Don't handle individual drags when part of multi-selection group
+              // SelectionGroupNode handles the entire group as one entity
+              // Only block if actively editing multiple shapes, not during selection acquisition
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
+              if (isPartOfGroup) return;
+              
               if (lockedByOther || isPanning) return;
               // Require selection before editing/dragging
               if (!isSelected) {
@@ -1034,6 +1042,13 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             };
 
             const onDragMove = (e) => {
+              // Don't handle individual drags when part of multi-selection group
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
+              if (isPartOfGroup) return;
+              
               if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
               const node = e.target;
               // Update cursor to actual pointer position in canvas coordinates
@@ -1082,6 +1097,13 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             };
 
             const onDragEnd = async (e) => {
+              // Don't handle individual drags when part of multi-selection group
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapes.size > 1;
+              if (isPartOfGroup) return;
+              
               if (lockedByOther || isPanning || !editingShapes.has(shape.id)) return;
               
               // Check if this is part of a multi-selection
@@ -1152,6 +1174,13 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             };
 
             const onTransform = (e) => {
+              // Don't handle individual transforms when part of multi-selection group
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
+              if (isPartOfGroup) return;
+              
               if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
               const node = e.target;
               const scaleX = node.scaleX?.() ?? 1;
@@ -1227,6 +1256,13 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             };
 
             const onTransformEnd = async (e) => {
+              // Don't handle individual transforms when part of multi-selection group
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
+              if (isPartOfGroup) return;
+              
               if (lockedByOther || isPanning || !editingShapes.has(shape.id)) return;
               
               // Check if this is part of a multi-selection
@@ -1526,8 +1562,8 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             );
           })}
           
-          {/* Selection Group - DISABLED temporarily until performance optimized */}
-          {/* {selectedIds.size > 1 && selectedShapes.length > 0 && (
+          {/* Selection Group - Multi-selection optimization (O(1) instead of O(N)) */}
+          {selectedIds.size > 1 && selectedShapes.length > 0 && (
             <SelectionGroupNode
               key={`group-${selectedIds.size}`}
               shapes={selectedShapes}
@@ -1537,7 +1573,7 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
               onTransformEnd={handleGroupTransformEnd}
               isPanning={isPanning}
             />
-          )} */}
+          )}
           
           <Transformer
             ref={transformerRef}

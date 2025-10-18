@@ -1,0 +1,41 @@
+Description: Echo the just-created Git branch name in responses at branch genesis points
+
+## Purpose
+
+Ensure that whenever the workflow reaches a branch creation step ("branch genesis") or summarizes Git actions that include creating a branch, the assistant explicitly prints the branch name that was just created in the response.
+
+## When to Apply
+
+Apply this rule in any message that:
+- Mentions creating a branch (e.g., `git checkout -b <branch>`, "created `<branch>` off", "pushed `<branch>`"), or
+- Summarizes actions that obviously included branch creation (stashing, branching, adding `BRANCH_GENESIS`, committing, pushing), or
+- References a known branch genesis artifact like `BRANCH_GENESIS/PROBLEM_STATEMENT.md`.
+
+## How to Determine the Branch Name
+
+- Prefer the most recent branch name found in this conversation or tool output from commands like:
+  - `git checkout -b <branch>`
+  - `git push -u origin <branch>`
+  - Narrative lines such as "created `<branch>` off `<base>`".
+- If multiple branches appear, choose the most recent branch that was created in this session.
+- If uncertain, state the best guess from the latest mention. If truly unknown, say "Branch: `<unknown>`".
+
+## Output Requirement
+
+In qualifying messages, include a dedicated line near the top or inside the summary section:
+
+- Branch: `<branch-name>`
+
+Formatting rules:
+- Wrap the branch name in backticks.
+- Keep it on its own line for scannability.
+- Do not paraphrase the branch; echo it exactly as created (e.g., `feature/evaluator-tests-pr-1`).
+
+## Example
+
+Given recent actions: "Stashed changes, created `feature/evaluator-tests-pr-1` off `origin/develop`, and added `BRANCH_GENESIS`…"
+
+Include in the response:
+
+- Branch: `feature/evaluator-tests-pr-1`
+

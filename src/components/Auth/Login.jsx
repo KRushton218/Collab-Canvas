@@ -69,6 +69,7 @@ export const Login = () => {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 maxLength={20}
+                autoComplete="name"
                 className="w-full px-3 py-2 border border-gray-300 rounded"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -84,6 +85,7 @@ export const Login = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="email"
               className="w-full px-3 py-2 border border-gray-300 rounded"
             />
           </div>
@@ -96,6 +98,7 @@ export const Login = () => {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
+              autoComplete={isSignUp ? "new-password" : "current-password"}
               className="w-full px-3 py-2 border border-gray-300 rounded"
             />
           </div>
