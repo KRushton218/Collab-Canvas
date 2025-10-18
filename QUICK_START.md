@@ -3,33 +3,44 @@
 ## 🚀 Development
 
 ```bash
-npm run dev                 # Start local dev server → http://localhost:5173
-npm run build              # Build for production
-npm run lint               # Check code quality
-npm test -- --run          # Run all unit tests
-npm test:coverage          # See test coverage report
+# Local Development (with backend selection)
+npm run dev                 # Dev backend (default, safe) → http://localhost:5173
+npm run dev:prod            # Prod backend (use with caution!)
+
+# Build
+npm run build               # Production build (prod backend)
+npm run build:dev           # Dev build (dev backend)
+
+# Quality
+npm run lint                # Check code quality
+npm test -- --run           # Run all unit tests
+npm test:coverage           # See test coverage report
 ```
 
-## 🚢 Deployment
+## 🚢 Deployment (Backend Separated!)
 
-### To Production
+### To Main Sites
 ```bash
-npm run firebase:deploy:prod
-# Or full: npm run build && firebase deploy --only hosting
+npm run firebase:deploy:prod    # Deploy to production (collab-canvas-ed2fc)
+npm run firebase:deploy:dev     # Deploy to dev (collab-canvas-dev)
 ```
 
-### To Preview Channel (Safest for Features)
+### To Preview Channels (Recommended for Features!)
 ```bash
-npm run firebase:deploy:channel
+# Dev backend (safe for testing!)
+npm run firebase:channel:dev
+# Creates: https://collab-canvas-dev--<branch-name>-xxx.web.app
+
+# Prod backend (for production-ready features)
+npm run firebase:channel:prod
 # Creates: https://collab-canvas-ed2fc--<branch-name>-xxx.web.app
 ```
 
 ### Management
 ```bash
-npm run firebase:channels:list      # See active channels
-npm run firebase:releases:list      # Deployment history
-firebase hosting:channel:finalize <name>  # Promote channel to prod
-firebase hosting:channel:delete <name>    # Clean up old channel
+npm run firebase:channels:list:prod      # List prod channels
+npm run firebase:channels:list:dev       # List dev channels
+firebase hosting:channel:delete <name>   # Clean up old channel
 ```
 
 ## 🔍 Debugging
@@ -55,7 +66,8 @@ Before deploying, verify:
 
 | Doc | Purpose |
 |-----|---------|
-| `DEPLOYMENT_STRATEGY.md` | How to deploy safely |
+| `BACKEND_SEPARATION_COMPLETE.md` | ✨ NEW: Backend isolation guide |
+| `DEPLOYMENT_STRATEGY.md` | How to deploy safely with backend separation |
 | `docs/DEBUGGING_GUIDE.md` | How to test & troubleshoot |
 | `docs/current-todos.md` | What to build next |
 | `SESSION_SUMMARY_OCT18.md` | What was done today |
@@ -70,19 +82,23 @@ Before deploying, verify:
 
 See `docs/current-todos.md` for full roadmap.
 
-## 💾 Firebase Projects
+## 💾 Firebase Projects (Completely Isolated!)
 
 ```
 Production:  collab-canvas-ed2fc (514078057617)
 ├─ URL: https://collab-canvas-ed2fc.web.app
-└─ Data: Real user data
+├─ Firestore: Production data ONLY
+├─ Realtime DB: Production sessions ONLY
+└─ Built with: npm run build
 
 Development: collab-canvas-dev (975005302451)
 ├─ URL: https://collab-canvas-dev.web.app
-└─ Data: Test data
+├─ Firestore: Test data ONLY (completely separate!)
+├─ Realtime DB: Test sessions ONLY (completely separate!)
+└─ Built with: npm run build:dev
 ```
 
-Switch projects: `firebase use collab-canvas-dev`
+**Zero data conflicts** - Prod and dev users never interact! ✅
 
 ## 🔐 Key Features Working
 
@@ -113,8 +129,9 @@ Switch projects: `firebase use collab-canvas-dev`
 - Verify Firebase connection
 
 **Shapes not syncing?**
-- Verify both users in same project
-- Check Firebase Console → Realtime DB
+- Verify both users on same backend (dev vs prod)
+- Check which backend: Look at Firebase project ID in console
+- Dev: collab-canvas-dev | Prod: collab-canvas-ed2fc
 - See `docs/DEBUGGING_GUIDE.md`
 
 **Performance issues?**

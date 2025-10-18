@@ -19,6 +19,7 @@ import CanvasHelpOverlay from './CanvasHelpOverlay';
 import StylePanel from './StylePanel';
 import InfiniteGrid from './InfiniteGrid';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { logLockedShapeClick } from '../../utils/lockClickLogger';
 
 const Canvas = ({ currentUserColor = '#000000' }) => {
   const {
@@ -699,6 +700,28 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
           return !isLockedByOther;
         }).map(shape => shape.id);
         
+        // Log any locked shapes that were excluded from selection
+        const lockedShapesInBox = candidateShapes.filter(shape => {
+          return currentUser && isShapeLockedByOther(locks, shape.id, currentUser.uid);
+        });
+        
+        if (lockedShapesInBox.length > 0) {
+          lockedShapesInBox.forEach(shape => {
+            const lockOwnerInfo = {
+              displayName: getLockOwnerName(shape) || 'Unknown User',
+              color: getLockOwnerColor(shape),
+              uid: shape.lockedBy,
+            };
+            
+            logLockedShapeClick({
+              shape,
+              locks,
+              lockOwnerInfo,
+              eventType: 'rectangular_selection_attempted',
+            });
+          });
+        }
+        
         if (selectionModifier === 'toggle') {
           // Toggle selection
           toggleMultiple(selectedShapeIds);
@@ -931,6 +954,21 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
               // NEVER allow selecting locked shapes
               if (lockedByOther) {
                 const ownerName = getLockOwnerName(shape);
+                
+                // Log the locked shape click with all lock details
+                const lockOwnerInfo = {
+                  displayName: ownerName || 'Unknown User',
+                  color: getLockOwnerColor(shape),
+                  uid: shape.lockedBy,
+                };
+                
+                logLockedShapeClick({
+                  shape,
+                  locks,
+                  lockOwnerInfo,
+                  eventType: 'click',
+                });
+                
                 showToast(`🔒 This shape is being edited by ${ownerName}`);
                 return; // Don't select
               }

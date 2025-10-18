@@ -1,8 +1,8 @@
 // Firebase Configuration and Initialization
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getDatabase, connectDatabaseEmulator } from 'firebase/database';
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -45,6 +45,31 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);  // Firestore for persistent canvas state
 export const rtdb = getDatabase(app); // Realtime Database for cursors and presence
+
+// Connect to emulators if VITE_USE_EMULATOR is true
+if (import.meta.env.VITE_USE_EMULATOR === 'true') {
+  console.log('🧪 Connecting to Firebase Emulators...');
+  
+  try {
+    connectFirestoreEmulator(db, 'localhost', 8081);
+    console.log('✅ Connected to Firestore Emulator (localhost:8081)');
+  } catch (error) {
+    // Emulator already connected or other error
+    if (!error.message.includes('already connected')) {
+      console.error('❌ Firestore Emulator connection error:', error);
+    }
+  }
+  
+  try {
+    connectDatabaseEmulator(rtdb, 'localhost', 9001);
+    console.log('✅ Connected to Realtime Database Emulator (localhost:9001)');
+  } catch (error) {
+    // Emulator already connected or other error
+    if (!error.message.includes('already connected')) {
+      console.error('❌ Realtime Database Emulator connection error:', error);
+    }
+  }
+}
 
 // Export the app instance for any additional configuration
 export default app;

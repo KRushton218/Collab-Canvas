@@ -1,55 +1,74 @@
-# Deployment Strategy: Safe Multi-Branch Deployments
+# Deployment Strategy: Backend Separation & Safe Deployments
 
 ## Overview
-CollabCanvas uses **Firebase Hosting Channels** to enable safe, isolated deployments for different branches and features without affecting production users.
+CollabCanvas uses **separate Firebase backends** for production and development, ensuring complete isolation between live users and testing environments. This prevents any data conflicts or accidental interactions between production and development users.
 
-## Current Setup
+## ✅ Backend Separation (COMPLETE)
 
-### Firebase Projects
+### Firebase Projects - Fully Isolated
 ```
 Production:  collab-canvas-ed2fc (514078057617)
-├─ Hosting URL: https://collab-canvas-ed2fc.web.app
-├─ Live users: ✅ Yes
-└─ Database: Firestore + Realtime DB (production data)
+├─ Hosting: https://collab-canvas-ed2fc.web.app
+├─ Frontend: Built with .env.production
+├─ Firestore: Production data ONLY
+└─ Realtime DB: Production sessions ONLY
 
 Development: collab-canvas-dev (975005302451)
-├─ Hosting URL: https://collab-canvas-dev.web.app
-├─ Live users: For testing only
-└─ Database: Separate Firestore + Realtime DB (test data)
+├─ Hosting: https://collab-canvas-dev.web.app
+├─ Frontend: Built with .env.development
+├─ Firestore: Test data ONLY (completely separate)
+└─ Realtime DB: Test sessions ONLY (completely separate)
 ```
+
+**Result**: Production users and dev users NEVER interact with the same data! ✅
 
 ## Deployment Strategy
 
-### 1. **Main Branches** (Direct Deployments)
+### 1. **Production Deployments** (Live Backend)
 
-#### Production (`master` branch)
+Deploy to production Firebase backend with live data:
+
 ```bash
-npm run firebase:deploy:hosting
-# Deploys to: https://collab-canvas-ed2fc.web.app
-# Audience: All users
-# Frequency: After full testing, on demand
+# Deploy to production (master branch recommended)
+npm run firebase:deploy:prod
+
+# What happens:
+# 1. Builds with .env.production (collab-canvas-ed2fc backend)
+# 2. Deploys to: https://collab-canvas-ed2fc.web.app
+# 3. Users connect to PRODUCTION Firestore + RTDB
 ```
 
-#### Development (`develop` branch)
+### 2. **Development Deployments** (Dev Backend)
+
+Deploy to development Firebase backend with test data:
+
 ```bash
-firebase use collab-canvas-dev
-npm run firebase:deploy:hosting
-firebase use collab-canvas-ed2fc  # Switch back to prod
+# Deploy to dev (develop/feature branches)
+npm run firebase:deploy:dev
+
+# What happens:
+# 1. Builds with .env.development (collab-canvas-dev backend)
+# 2. Deploys to: https://collab-canvas-dev.web.app
+# 3. Users connect to DEV Firestore + RTDB (completely separate!)
 ```
 
-### 2. **Feature Branches** (Channel Deployments - RECOMMENDED)
+### 3. **Preview Channels** (Isolated Testing URLs)
 
-Feature branches get isolated, temporary preview URLs:
+Create temporary preview URLs for feature branches:
 
+#### Production Backend (for production-ready features):
 ```bash
-# Feature branch: feature/new-export
-firebase hosting:channel:deploy feature-new-export --only hosting
+npm run firebase:channel:prod
+# Creates: https://collab-canvas-ed2fc--[branch]-xxx.web.app
+# Backend: Production (use with caution!)
+```
 
-# Result:
-✔ Deploy complete! Temporary URL:
-  https://collab-canvas-ed2fc--feature-new-export-abc123.web.app
-  
-# Expires in 7 days unless extended
+#### Dev Backend (for testing features):
+```bash
+npm run firebase:channel:dev
+# Creates: https://collab-canvas-dev--[branch]-xxx.web.app
+# Backend: Development (safe for testing!)
+# Expires in 7 days
 ```
 
 ### 3. **Channel Management**
@@ -83,90 +102,123 @@ firebase hosting:channel:finalize feature-x
 
 ## Recommended Workflow
 
-### For Feature Development (Safest Option)
+### For Feature Development (Safest - Recommended!)
 ```bash
 # 1. Create feature branch
 git checkout -b feature/new-feature
 
-# 2. Make changes and test locally
+# 2. Make changes and test locally with DEV backend
 npm run dev
+# This uses .env.development (dev backend)
 
-# 3. Build and deploy to unique preview URL
-npm run build
-firebase hosting:channel:deploy feature-new-feature --only hosting
+# 3. Deploy to dev preview channel for team testing
+npm run firebase:channel:dev
+# Creates: https://collab-canvas-dev--feature-new-feature-xxx.web.app
+# Backend: Dev (safe!)
 
 # 4. Share preview URL for testing
-# https://collab-canvas-ed2fc--feature-new-feature-xxx.web.app
+# Team can test without affecting production users!
 
-# 5. After approval, merge and deploy to production
+# 5. After approval, merge to master
 git checkout master
 git merge feature/new-feature
-npm run firebase:deploy:hosting
+
+# 6. Deploy to production
+npm run firebase:deploy:prod
+# Backend: Production (live users)
 ```
 
-### For Bug Fixes (Quick Deploy)
+### For Quick Hotfixes (Production)
 ```bash
-# 1. For quick fixes, deploy directly from develop to production
+# 1. Fix directly on master
 git checkout master
-# ... make fixes ...
-npm run firebase:deploy:hosting
+# ... make critical fixes ...
+
+# 2. Test locally with PRODUCTION backend
+npm run dev:prod
+
+# 3. Deploy to production immediately
+npm run firebase:deploy:prod
 ```
 
 ### For Multiple Concurrent Features
 ```bash
-# Branch 1: Export feature
+# Branch 1: Export feature (on dev backend)
 git checkout -b feature/export
-npm run build
-firebase hosting:channel:deploy feature-export --only hosting
-# Share: https://collab-canvas-ed2fc--feature-export-xxx.web.app
+npm run firebase:channel:dev
+# Share: https://collab-canvas-dev--feature-export-xxx.web.app
 
-# Branch 2: New shapes feature
+# Branch 2: New shapes feature (on dev backend)
 git checkout -b feature/new-shapes
-npm run build
-firebase hosting:channel:deploy feature-new-shapes --only hosting
-# Share: https://collab-canvas-ed2fc--feature-new-shapes-xxx.web.app
+npm run firebase:channel:dev
+# Share: https://collab-canvas-dev--feature-new-shapes-xxx.web.app
 
-# Both can be tested independently!
+# Both test independently with separate backends!
+# No risk to production data!
 ```
 
 ## Safety Guarantees
 
+✅ **Complete Backend Separation**
+- Production backend: `collab-canvas-ed2fc` (live data)
+- Development backend: `collab-canvas-dev` (test data)
+- **Zero chance of data conflicts** between prod and dev users!
+- Production Firestore/RTDB completely isolated from dev
+
 ✅ **Channel Deployments are Isolated**
 - Each channel has unique URL
-- No impact on production users
-- Separate session storage (RTDB/Firestore still shared - use test data)
+- Choose backend per deployment (prod vs dev)
 - 7-day auto-expiration (prevents accumulation)
+- Safe for parallel feature testing
 
 ✅ **Production is Protected**
-- Only explicit `firebase deploy` to main affects production
+- Requires explicit `npm run firebase:deploy:prod`
+- Must use `--mode production` to connect to prod backend
 - Channel deployments never touch main URL
 - Easy rollback by deploying previous version
 
-✅ **Data Safety**
-- All channels use same Firestore/RTDB databases
-- Use separate canvas IDs for testing to avoid data mix
-- Or switch to `collab-canvas-dev` project for complete isolation
+✅ **Development Freedom**
+- Test freely on dev backend without affecting live users
+- Create/delete test data without consequences
+- Multiple developers can test simultaneously
+- No production data pollution
 
 ## Environment Configuration
 
-### Current Build Modes
-```json
-{
-  "scripts": {
-    "build": "vite build",                    // Production (default)
-    "build:public": "vite build --mode public",
-    "build:dev": "vite build --mode dev"
-  }
-}
+### Environment Files (Vite Auto-Loading)
+```
+.env.production       → Production backend config (collab-canvas-ed2fc)
+.env.development      → Dev backend config (collab-canvas-dev)
+.env.local            → Local emulator (optional, overrides others)
+.env.example          → Template (for new developers)
 ```
 
-### Using Build Modes
-```bash
-# Production build (optimized)
-npm run build && firebase hosting:channel:deploy prod-test --only hosting
+### How Vite Loads Env Files
+Vite automatically loads the correct `.env` file based on the `--mode` flag:
 
-# Dev build (with debug info)
-npm run build:dev && firebase hosting:channel:deploy dev-test --only hosting
+```bash
+# Uses .env.production
+npm run dev:prod        # Local dev with PROD backend
+npm run build           # Production build → PROD backend
+
+# Uses .env.development
+npm run dev             # Local dev with DEV backend (default)
+npm run build:dev       # Dev build → DEV backend
+```
+
+### NPM Scripts Summary
+```json
+{
+  "dev": "vite --mode development",           // Dev backend
+  "dev:prod": "vite --mode production",       // Prod backend
+  "build": "vite build --mode production",    // Prod backend
+  "build:dev": "vite build --mode development", // Dev backend
+  
+  "firebase:deploy:prod": "npm run build && firebase deploy --only hosting --project collab-canvas-ed2fc",
+  "firebase:deploy:dev": "npm run build:dev && firebase deploy --only hosting --project collab-canvas-dev",
+  "firebase:channel:prod": "npm run build && firebase hosting:channel:deploy ... --project collab-canvas-ed2fc",
+  "firebase:channel:dev": "npm run build:dev && firebase hosting:channel:deploy ... --project collab-canvas-dev"
+}
 ```
 
 ## Common Tasks
@@ -194,19 +246,30 @@ npm run build
 npm run firebase:deploy:hosting
 ```
 
-## Scripts to Add to package.json
+## Quick Reference: Deployment Commands
 
-Consider adding convenience scripts:
+### Local Development
+```bash
+npm run dev          # Dev backend (default, safe for testing)
+npm run dev:prod     # Prod backend (use with caution!)
+```
 
-```json
-{
-  "scripts": {
-    "firebase:deploy:prod": "npm run build && firebase deploy --only hosting",
-    "firebase:deploy:channel": "npm run build && firebase hosting:channel:deploy $(git branch --show-current) --only hosting",
-    "firebase:list-channels": "firebase hosting:channels:list collab-canvas-ed2fc",
-    "firebase:delete-channel": "firebase hosting:channel:delete $(git branch --show-current)"
-  }
-}
+### Deploy to Main Sites
+```bash
+npm run firebase:deploy:prod    # Deploy to production
+npm run firebase:deploy:dev     # Deploy to dev
+```
+
+### Deploy to Preview Channels
+```bash
+npm run firebase:channel:prod   # Preview on prod backend
+npm run firebase:channel:dev    # Preview on dev backend (recommended!)
+```
+
+### Manage Channels
+```bash
+npm run firebase:channels:list:prod    # List prod channels
+npm run firebase:channels:list:dev     # List dev channels
 ```
 
 ## Monitoring Deployments
@@ -252,12 +315,13 @@ npm run firebase:deploy:hosting
 
 ## Best Practices
 
-1. ✅ **Always use channels for features** - Never merge directly to master without testing
-2. ✅ **Test in channel before promoting** - Share preview URL, get feedback
-3. ✅ **Name channels after branches** - Makes tracking easier
+1. ✅ **Default to dev backend for testing** - Use `npm run dev` and `npm run firebase:channel:dev`
+2. ✅ **Test features on dev backend first** - Never test unfinished features on prod backend
+3. ✅ **Use channels for code review** - Deploy to dev preview, share URL in PR
 4. ✅ **Clean up old channels** - Delete after merging to avoid clutter
-5. ✅ **Document preview URLs** - Share with team via issue/PR
-6. ✅ **Use separate canvas IDs for testing** - Avoid polluting user data
+5. ✅ **Production deploys from master only** - Protect production from untested code
+6. ✅ **Document preview URLs** - Share with team via issue/PR
+7. ✅ **Check which backend you're on** - Look at Firebase Console project ID
 
 ## Future Enhancements
 
