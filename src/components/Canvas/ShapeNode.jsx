@@ -6,7 +6,6 @@ import { useRef, useEffect } from 'react';
 
 const ShapeNode = ({
   shape,
-  scale,
   isSelected,
   isLockedByOther,
   isBeingEditedByMe,
@@ -25,8 +24,8 @@ const ShapeNode = ({
   const nodeRef = useRef(null);
 
   // Lock/selection visuals and default accessibility border
-  const baseStrokeWidth = 6;
-  const scaledStrokeWidth = baseStrokeWidth / scale;
+  // Keep overlay stroke proportional to shape size (scales with zoom)
+  const baseOverlayStrokeWidth = 6;
 
   const isLockOrSelect = isSelected || isLockedByOther || isBeingEditedByMe;
   const overlayStrokeColor = isSelected
@@ -36,12 +35,12 @@ const ShapeNode = ({
     : undefined;
 
   const overlayStrokeWidth = isSelected
-    ? scaledStrokeWidth * 0.5
+    ? baseOverlayStrokeWidth * 0.5
     : (isLockedByOther || isBeingEditedByMe)
-    ? scaledStrokeWidth
+    ? baseOverlayStrokeWidth
     : 0;
 
-  const dash = (isLockedByOther || isBeingEditedByMe) ? [15 / scale, 8 / scale] : undefined;
+  const dash = (isLockedByOther || isBeingEditedByMe) ? [15, 8] : undefined;
 
   const commonProps = {
     id: shape.id,
@@ -73,50 +72,91 @@ const ShapeNode = ({
   switch (shape.type) {
     case 'rectangle':
       return (
-        <Rect
+        <Group
           ref={nodeRef}
           {...commonProps}
           {...getRectOffsetProps(shape.width, shape.height)}
           width={shape.width}
           height={shape.height}
-          fill={shape.fill}
-          stroke={isLockOrSelect ? overlayStrokeColor : (shape.stroke || '#e5e7eb')}
-          strokeWidth={isLockOrSelect ? overlayStrokeWidth : Math.max(1, shape.strokeWidth || 1) / scale}
-          dash={dash}
-          cornerRadius={shape.cornerRadius || 0}
           onDragStart={onStartEdit}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
           onTransformStart={onStartEdit}
           onTransform={handleTransform}
           onTransformEnd={handleTransformEnd}
-        />
+        >
+          {/* Selection/Lock indicator (outer border) */}
+          {isLockOrSelect && (
+            <Rect
+              x={0}
+              y={0}
+              width={shape.width}
+              height={shape.height}
+              fill="transparent"
+              stroke={overlayStrokeColor}
+              strokeWidth={overlayStrokeWidth}
+              dash={dash}
+              cornerRadius={shape.cornerRadius || 0}
+              listening={false}
+            />
+          )}
+          {/* Actual shape with its own border */}
+          <Rect
+            x={0}
+            y={0}
+            width={shape.width}
+            height={shape.height}
+            fill={shape.fill}
+            stroke={shape.stroke || '#e5e7eb'}
+            strokeWidth={shape.strokeWidth || 1}
+            cornerRadius={shape.cornerRadius || 0}
+            listening={true}
+          />
+        </Group>
       );
     case 'circle': {
       // Render circle based on bounding box
       // Use offset to anchor to top-left corner during transforms
       const radius = Math.min(shape.width, shape.height) / 2;
       return (
-        <Circle
+        <Group
           ref={nodeRef}
           {...commonProps}
-          // Position at center but use offset for transform anchor
           x={shape.x + radius}
           y={shape.y + radius}
           offsetX={radius}
           offsetY={radius}
-          radius={radius}
-          fill={shape.fill}
-          stroke={isLockOrSelect ? overlayStrokeColor : (shape.stroke || '#e5e7eb')}
-          strokeWidth={isLockOrSelect ? overlayStrokeWidth : Math.max(1, shape.strokeWidth || 1) / scale}
-          dash={dash}
           onDragStart={onStartEdit}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
           onTransformStart={onStartEdit}
           onTransform={handleTransform}
           onTransformEnd={handleTransformEnd}
-        />
+        >
+          {/* Selection/Lock indicator (outer border) */}
+          {isLockOrSelect && (
+            <Circle
+              x={0}
+              y={0}
+              radius={radius}
+              fill="transparent"
+              stroke={overlayStrokeColor}
+              strokeWidth={overlayStrokeWidth}
+              dash={dash}
+              listening={false}
+            />
+          )}
+          {/* Actual shape with its own border */}
+          <Circle
+            x={0}
+            y={0}
+            radius={radius}
+            fill={shape.fill}
+            stroke={shape.stroke || '#e5e7eb'}
+            strokeWidth={shape.strokeWidth || 1}
+            listening={true}
+          />
+        </Group>
       );
     }
     case 'line': {
@@ -162,8 +202,8 @@ const ShapeNode = ({
           onTransformEnd={onTransformEnd}
         >
           <Rect
-            x={-shape.width / 2}
-            y={-shape.height / 2}
+            x={0}
+            y={0}
             width={shape.width}
             height={shape.height}
             fill={shape.boxFill ?? 'transparent'}
@@ -172,8 +212,8 @@ const ShapeNode = ({
             listening={false}
           />
           <KonvaText
-            x={-shape.width / 2}
-            y={-shape.height / 2}
+            x={0}
+            y={0}
             width={shape.width}
             height={shape.height}
             text={shape.text || ''}

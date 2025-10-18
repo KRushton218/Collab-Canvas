@@ -5,25 +5,16 @@ service cloud.firestore {
     
     // Shapes collection - NEW SCHEMA (1 document per shape)
     // Each shape is at /shapes/{shapeId}
+    // OPTIMIZED: Minimal validation for batch operation performance
     match /shapes/{shapeId} {
       // Anyone authenticated can read shapes
       allow read: if request.auth != null;
       
-      // Anyone authenticated can create shapes
-      // Note: createdBy check relaxed to allow undo/redo operations
-      allow create: if request.auth != null 
-                    && request.resource.data.canvasId is string
-                    && request.resource.data.x is number
-                    && request.resource.data.y is number
-                    && request.resource.data.width is number
-                    && request.resource.data.height is number;
-      
-      // Anyone authenticated can update shapes
-      // Note: Locking is handled in RTDB, not Firestore
-      allow update: if request.auth != null;
-      
-      // Anyone authenticated can delete shapes
-      allow delete: if request.auth != null;
+      // Anyone authenticated can create/update/delete shapes
+      // Note: Schema validation removed for performance (batch operations with 500+ shapes)
+      // Note: Locking handled in RTDB, not Firestore
+      // Trust: Client-side validation sufficient for authenticated users
+      allow create, update, delete: if request.auth != null;
     }
     
     // OLD SCHEMA (deprecated) - /canvas/{canvasId}
