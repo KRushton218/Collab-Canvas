@@ -1,3 +1,5 @@
+@branch-echo.mdc
+@rule-authoring.mdc
 Description: Bug fix workflow and deployment process
 
 ## Bug Fix Workflow

@@ -1,0 +1,74 @@
+Description: Meta rule for creating, updating, and wiring Cursor rules (callable on demand)
+
+## Purpose
+
+Provide a repeatable, light-weight process to author new Cursor rules, ensure they are discoverable via includes, and standardize assistant behavior when a user requests “make this a rule” or similar.
+
+## When to Apply
+
+Apply this rule whenever the user:
+- Says “make this a rule”, “add a Cursor rule”, “create a rule for X”, or “convert this conversation to a rule”.
+- Mentions `.cursor/rules/` or asks for rule propagation across branches.
+- Requests a callable/automated guide for rule additions.
+
+## Assistant Behavior (Call Flow)
+
+When triggered, the assistant should:
+1. Inspect existing rules in `.cursor/rules/` to avoid duplicates and pick an appropriate filename.
+2. Create or update exactly one rule file with minimal edits elsewhere.
+3. Add an include reference (`@file`) in relevant workflow rules for discoverability.
+4. Echo any just-created branch name if this action occurs at a branch genesis point (see `@branch-echo.mdc`).
+5. Summarize changes in a concise status line.
+
+## Authoring Standards
+
+- Filenames: kebab-case, concise, ends with `.mdc` (e.g., `shape-locking.mdc`).
+- Structure (recommended in the file):
+  - `Description:` one line
+  - `## Purpose`
+  - `## When to Apply`
+  - `## How to Use`
+  - Optional: `Globs:` if rule targets specific files
+  - Optional: `## Output Requirements` if the rule constrains responses
+- Includes: Reference the new rule from relevant top-level workflow rules using `@filename.mdc` near the top of those files.
+
+## Minimal Edit Policy
+
+- Only touch files under `.cursor/rules/` unless explicitly asked.
+- Keep edits surgical: add the new file and a single include line where appropriate.
+- Preserve existing indentation and formatting; do not reflow unrelated text.
+
+## Commit Guidance (if using Git)
+
+- Single-purpose commit messages:
+  - `rules: add <rule-name>.mdc (<short purpose>)`
+  - If adding includes: `rules: link <rule-name> from <workflow-rule>`
+- Avoid bundling non-rule changes with rule commits.
+
+## Propagation Guidance (multi-branch repos)
+
+- Preferred: land the rule on the default branch (e.g., `master` or `main`).
+- Then bring the exact file onto other branches without modifying unrelated rules.
+- If a previous “sync” commit touched multiple rules inadvertently, revert it, then apply only the new file and minimal include line per branch.
+
+## How to Use (Assistant Steps)
+
+When asked to add a new rule:
+1. Propose a filename and brief purpose.
+2. Create the rule file with the sections above.
+3. Add one include line to each relevant workflow rule (e.g., `bugfix-workflow.mdc`).
+4. Return a short summary listing files touched.
+
+## Invocation Phrases (examples)
+
+- “Make this a rule.”
+- “Add a Cursor rule that enforces <behavior>.”
+- “Create `.cursor/rules/<name>.mdc` with these requirements: …”
+- “Wire the new rule into the bugfix workflow.”
+
+## Output Requirements (when applicable)
+
+- If the session includes a recent branch creation, include a dedicated line:
+  - `Branch: `<branch-name>` (see `@branch-echo.mdc`)
+- Provide a one- to two-line change summary with file paths.
+
