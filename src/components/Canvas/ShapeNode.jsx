@@ -88,8 +88,8 @@ const ShapeNode = ({
           {/* Selection/Lock indicator (outer border) */}
           {isLockOrSelect && (
             <Rect
-              x={-shape.width / 2}
-              y={-shape.height / 2}
+              x={0}
+              y={0}
               width={shape.width}
               height={shape.height}
               fill="transparent"
@@ -102,8 +102,8 @@ const ShapeNode = ({
           )}
           {/* Actual shape with its own border */}
           <Rect
-            x={-shape.width / 2}
-            y={-shape.height / 2}
+            x={0}
+            y={0}
             width={shape.width}
             height={shape.height}
             fill={shape.fill}
@@ -202,8 +202,8 @@ const ShapeNode = ({
           onTransformEnd={onTransformEnd}
         >
           <Rect
-            x={-shape.width / 2}
-            y={-shape.height / 2}
+            x={0}
+            y={0}
             width={shape.width}
             height={shape.height}
             fill={shape.boxFill ?? 'transparent'}
@@ -212,8 +212,8 @@ const ShapeNode = ({
             listening={false}
           />
           <KonvaText
-            x={-shape.width / 2}
-            y={-shape.height / 2}
+            x={0}
+            y={0}
             width={shape.width}
             height={shape.height}
             text={shape.text || ''}
