@@ -997,7 +997,10 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
             const onStartEdit = async (e) => {
               // Don't handle individual drags when part of multi-selection group
               // SelectionGroupNode handles the entire group as one entity
-              const isPartOfGroup = selectedIds.size > 1 && selectedIds.has(shape.id);
+              // Only block if actively editing multiple shapes, not during selection acquisition
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
               if (isPartOfGroup) return;
               
               if (lockedByOther || isPanning) return;
@@ -1040,7 +1043,10 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
 
             const onDragMove = (e) => {
               // Don't handle individual drags when part of multi-selection group
-              const isPartOfGroup = selectedIds.size > 1 && selectedIds.has(shape.id);
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
               if (isPartOfGroup) return;
               
               if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
@@ -1092,7 +1098,10 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
 
             const onDragEnd = async (e) => {
               // Don't handle individual drags when part of multi-selection group
-              const isPartOfGroup = selectedIds.size > 1 && selectedIds.has(shape.id);
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapes.size > 1;
               if (isPartOfGroup) return;
               
               if (lockedByOther || isPanning || !editingShapes.has(shape.id)) return;
@@ -1166,7 +1175,10 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
 
             const onTransform = (e) => {
               // Don't handle individual transforms when part of multi-selection group
-              const isPartOfGroup = selectedIds.size > 1 && selectedIds.has(shape.id);
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
               if (isPartOfGroup) return;
               
               if (lockedByOther || isPanning || !editingShapesRef.current.has(shape.id)) return;
@@ -1245,7 +1257,10 @@ const Canvas = ({ currentUserColor = '#000000' }) => {
 
             const onTransformEnd = async (e) => {
               // Don't handle individual transforms when part of multi-selection group
-              const isPartOfGroup = selectedIds.size > 1 && selectedIds.has(shape.id);
+              // Only block if actively editing multiple shapes
+              const isPartOfGroup = selectedIds.size > 1 
+                                  && selectedIds.has(shape.id) 
+                                  && editingShapesRef.current.size > 1;
               if (isPartOfGroup) return;
               
               if (lockedByOther || isPanning || !editingShapes.has(shape.id)) return;
