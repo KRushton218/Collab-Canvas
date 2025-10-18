@@ -1,0 +1,117 @@
+Description: Bug fix workflow and deployment process
+
+## Bug Fix Workflow
+
+When completing a bug fix, follow this standardized process:
+
+### 1. Create Feature Branch
+```bash
+git checkout -b fix/descriptive-bug-name
+```
+
+Branch naming convention:
+- `fix/` prefix for bug fixes
+- Use kebab-case descriptive names
+- Examples: `fix/shape-positioning-offset`, `fix/lock-release-race-condition`
+
+### 2. Make Changes & Commit
+```bash
+git add [changed-files]
+git commit -m "fix: Brief title
+
+Detailed description of what was wrong and how it was fixed.
+
+- Bullet points for key changes
+- Include technical details
+- Note any breaking changes or side effects"
+```
+
+Commit message format:
+- **Type**: `fix:` for bug fixes
+- **Title**: Brief, imperative mood (50 chars max)
+- **Body**: Detailed explanation with bullet points
+- **Footer**: Reference issue numbers if applicable
+
+### 3. Push Branch
+```bash
+git push -u origin fix/descriptive-bug-name
+```
+
+### 4. Deploy to Dev for Testing
+After pushing the branch, ALWAYS deploy to Firebase Dev to verify the fix:
+
+```bash
+npm run firebase:deploy:dev
+```
+
+This command:
+- Builds with development config (`--mode development`)
+- Deploys to `collab-canvas-dev` project
+- Uses dev Firebase backend (separate from production)
+- URL: https://collab-canvas-dev.web.app
+
+### 5. Test on Dev Environment
+- Open https://collab-canvas-dev.web.app
+- Verify the bug is fixed
+- Test edge cases
+- Check for any unintended side effects
+
+### 6. Create Pull Request
+If dev testing passes:
+- Create PR from branch to `master`
+- Reference the fix in PR description
+- Link any related issues
+
+### 7. Merge & Deploy to Production
+After PR approval:
+```bash
+git checkout master
+git pull
+npm run firebase:deploy:prod
+```
+
+## Environment Summary
+
+### Development (`collab-canvas-dev`)
+- URL: https://collab-canvas-dev.web.app
+- Firebase Project: `collab-canvas-dev`
+- Backend: Separate Firestore & RTDB instances
+- Purpose: Testing and verification before production
+- Deploy: `npm run firebase:deploy:dev`
+
+### Production (`collab-canvas-ed2fc`)
+- URL: https://collab-canvas-ed2fc.web.app
+- Firebase Project: `collab-canvas-ed2fc`
+- Backend: Production Firestore & RTDB instances
+- Purpose: Live user-facing application
+- Deploy: `npm run firebase:deploy:prod`
+
+## Quick Commands
+
+```bash
+# Check current branch
+git branch --show-current
+
+# Check Firebase project
+firebase projects:list
+
+# Deploy current state to dev
+npm run firebase:deploy:dev
+
+# Deploy current state to prod
+npm run firebase:deploy:prod
+
+# Create preview channel on dev (for branch testing)
+npm run firebase:channel:dev
+
+# Create preview channel on prod (for staging)
+npm run firebase:channel:prod
+```
+
+## Important Notes
+
+- **NEVER deploy directly to production from a feature branch**
+- Always test on dev first
+- Keep dev and prod backends completely separate
+- Branch deployments use Firebase Hosting channels (temporary preview URLs)
+- Main deployments update the live site URL
