@@ -1,0 +1,107 @@
+---
+alwaysApply: false
+---
+After completing each sub-task, the AI must follow this sequence:
+
+### **1. Immediate Build/Compile Testing (First Priority)**
+- **When to run:** Immediately after any code changes, before any other testing suggestions
+- **Trigger conditions:**
+  - After adding new dependencies (package.json changes)
+  - After TypeScript config changes
+  - After new major dependencies
+  - After any code modifications that could affect compilation
+- **Action:** Run `npm run build` to verify everything compiles correctly
+- **Important:** This is a **local build check only** - do NOT trigger any deployments or web services
+- **If build fails:** Fix compilation errors before proceeding to any other testing suggestions
+- **Format:** "🔨 **Build Check:** Running build to verify compilation..." (then show results)
+- **Scope:** Local compilation verification only - no deployment, no web services, no external triggers
+
+### **2. Additional Test Tasks (When Needed)**
+- **When to propose:** Only when gaps in test coverage are identified that could lead to bugs or regressions
+- **Criteria for proposing new tests:**
+  - Missing error handling test cases
+  - Integration points between services that aren't covered
+  - Critical user flows that lack automated validation
+  - Edge cases that could cause production issues
+- **Proposal format:** "🔧 **Missing Test Coverage:** I recommend adding [specific test] to ensure [specific behavior] is properly validated."
+- **Action:** Add the proposed test as a new sub-task to the current task list
+- **When NOT to propose:** Don't suggest tests for the sake of completeness or theoretical coverage
+
+### **3. Web App Refresh/Testing (Before User Testing)**
+- **When to suggest:** After any task that affects the running application (new components, services, or configuration changes)
+- **Reminder format:** "🔄 **Testing Opportunity:** You can refresh your web app to see the changes. Run `npm run dev` if the dev server has stopped."
+- **When to skip:** For pure configuration files, types, or utilities that don't affect the UI
+- **Important:** NEVER automatically run `npm run dev` - always recommend it to the user to avoid multiple localhost instances
+
+### **4. User Testing Suggestions (When UI is Available)**
+- **When to suggest:** Only after implementing user-facing features that can be manually tested
+- **Prerequisites:** Must have actual UI components, pages, or interactive functionality
+- **Reminder format:** "🧪 **User Testing:** You can now test [specific functionality] by [specific steps]."
+- **Examples:** 
+  - After login pages: "test the login/signup flow by navigating to /login"
+  - After canvas features: "test pan/zoom functionality by interacting with the canvas"
+  - After presence features: "test cursor updates by opening multiple browser tabs"
+- **When to skip:** For backend services, utilities, or configuration that has no user interface
+
+### **Implementation Notes**
+- **Sequential execution:** Follow the numbered sequence above - don't skip steps
+- **Build failures block progress:** If build/compile fails, fix issues before proceeding to suggestions
+- Focus on **practical testing needs** rather than theoretical completeness
+- Only suggest additional tests when there's a clear risk of bugs or regressions
+- User testing suggestions should be **actionable** and **specific** to the implemented features
+- Don't overwhelm with too many testing suggestions at once
+
+## Task List Completion Protocol
+
+When a task list (PR) is completed, the AI must perform a comprehensive review and update:
+
+### **1. Progress File Update**
+- Move all "Known Issues & Future Improvements" from the completed task list to `docs/progress.md`
+- Add a summary of work completed in the PR to `docs/progress.md`
+- Include key files created, tests added, and major accomplishments
+
+### **2. Sub-PRD Update**
+- Review the sub-PRD that generated this task list
+- Update the sub-PRD to reflect any changes, clarifications, or new insights gained during implementation
+- Mark any completed sections or add notes about implementation decisions
+
+### **3. Task List Review & Validation**
+Before marking a PR complete, the AI must review and identify:
+
+#### **Missing Work Analysis**
+- **Scope gaps**: Are there tasks that should have been included but weren't?
+- **Dependencies**: Are there missing setup tasks that will block future PRs?
+- **Integration points**: Are there missing integration or configuration tasks?
+
+#### **Ambiguity Identification**
+- **Unclear requirements**: Were there any requirements that were ambiguous during implementation?
+- **Technical decisions**: Were there technical choices that need documentation or justification?
+- **Future blockers**: Are there decisions made that might cause problems in later PRs?
+
+#### **Quality Assurance**
+- **Test coverage**: Is the test coverage appropriate for the work done?
+- **Documentation**: Are there any implementation details that need better documentation?
+- **Error handling**: Are there error cases that weren't addressed?
+
+### **4. Completion Report**
+After the review, provide a summary including:
+- **Work completed**: What was accomplished
+- **Issues identified**: Any problems or gaps found
+- **Recommendations**: Suggestions for future PRs or improvements
+- **Dependencies**: What the next PR will need from this one
+
+### **5. File Updates**
+- Update `docs/progress.md` with completion summary and moved issues
+- Update the relevant sub-PRD with implementation insights
+- **Update README.md** with any new environment variables, setup instructions, or configuration changes introduced in the PR
+- Mark the task list as complete with any final notes
+
+### **6. Git Workflow Protocol**
+After completing the summary and review, follow the complete git workflow as defined in the `git-workflow` rule:
+
+1. **Feature Branch Commit**: Commit all changes to the feature branch
+2. **Merge to Develop**: Merge feature branch to local develop branch
+3. **Push to Remote**: Push changes to remote develop branch
+4. **Optional Main Merge**: Merge to main branch if appropriate
+
+**See `git-workflow` rule for detailed commands and procedures.**

@@ -322,6 +322,43 @@ Resolves: Performance optimization now complete without breaking workflows
 
 ---
 
+## Orchestrator: cursor_flow (Time/Depth Envelope)
+
+When starting a session, declare a cursor_flow envelope to control time budget and reasoning depth. Defaults apply if omitted, but explicit is better.
+
+Example envelopes:
+
+```yaml
+cursor_flow:
+  taskType: fix
+  timeBudgetMinutes: 20
+  reasoningDepth: standard
+  maxParallelAttempts: 1
+  stepTimeoutSeconds: 120
+  checkpointFrequencyMinutes: 5
+  riskPolicy: conservative
+```
+
+```yaml
+cursor_flow:
+  taskType: feature
+  timeBudgetMinutes: 40
+  reasoningDepth: deep
+  maxParallelAttempts: 2
+  stepTimeoutSeconds: 180
+  checkpointFrequencyMinutes: 10
+  riskPolicy: balanced
+  notes: "Allow broader exploration; consolidate at T-5m"
+```
+
+Operational guidance:
+- Echo the envelope once, then enforce it (status updates show remaining time)
+- Parallelize safe read-only exploration; sequence edits
+- Abort or fallback when a step exceeds `stepTimeoutSeconds`
+- At T-2m, consolidate: summarize, commit WIP if safe, propose next steps
+
+---
+
 ## 🚀 You've Got This!
 
 The hard analysis work is done. You just need to refine the guards to be less aggressive. Start with Option A (refine guard logic) - it's the simplest and most likely to work.

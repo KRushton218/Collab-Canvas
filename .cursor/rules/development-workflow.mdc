@@ -1,0 +1,231 @@
+---
+alwaysApply: true
+---
+## Branch Review & Audit Workflow
+
+### Initial Assessment
+Before any merge or integration work:
+1. **Current State**: Run `git branch` to check current branch and list all branches
+2. **Sync with Remote**: Fetch latest changes and compare local vs remote tracking
+3. **Stash Safety**: Save local changes safely before any checkout operations
+4. **Branch Analysis**: Categorize branches by status (ready, in-progress, stale)
+
+### Git Branch Naming Convention
+Follow these patterns for clarity and organization:
+- Feature branches: `feature/[feature-name]-pr-[N]`
+- Fix branches: `fix/[issue-type]-[descriptor]`
+- Integration branches: `develop` (for staging), `main`/`master` (for production)
+
+Examples:
+- `feature/auth-presence-pr-1`
+- `fix/console-errors`
+- `fix/enable-selectiongroupnode-performance`
+
+### Merge Strategy
+When merging branches into an integration branch:
+1. **Preserve Commit History**: Use merge commits (not squash) to maintain individual contribution clarity
+2. **Resolve Conflicts Cleanly**: Address merge conflicts with full context, keeping meaningful commit messages
+3. **Verification**: Run local build after each merge to catch issues early
+4. **Incremental Merging**: Merge related branches sequentially, checking for compilation issues
+
+---
+
+## Task Organization & Documentation
+
+### Task List Structure
+Generate task lists for PRs in Markdown format to `docs/tasks-[feature-name]-pr-[N].md`:
+
+**Metadata**:
+- PR Number: Sequential from highest existing PR
+- Feature/Fix Name: Clear, descriptive identifier
+- Scope: List of affected components/files
+- Test Strategy: Integration level, test files, verification approach
+
+**Subtasks Per PR**:
+- 4–6 actionable subtasks per PR (suitable for junior developers)
+- Clear action verbs: Create, Implement, Update, Add, Modify, etc.
+- Specific file listings: `path/to/file.ts (new)` or `path/to/file.ts (edit)`
+- Always include test files per PR
+- Logical progression with dependencies noted
+
+**Hierarchical Format** (optional for complex tasks):
+```
+## PR-N: [Feature Description]
+
+### 1. [Parent Task]
+   - [ ] Subtask A
+     - Files: path/to/file.ts (new), path/to/file.test.ts (new)
+   - [ ] Subtask B
+     - Files: path/to/file.ts (edit)
+
+### 2. [Parent Task]
+   - [ ] Implementation
+     - Files: path/to/component.jsx (new)
+```
+
+### Quality Standards for Tasks
+- **Actionable**: Clear next steps with no ambiguity
+- **Specific**: Exact file paths, component names, and requirements
+- **Complete**: Self-contained; junior developer can execute without additional context
+- **Testable**: Each task includes test verification approach
+- **Traceable**: Clear connection to original requirements and success criteria
+
+---
+
+## Development Integration Branch Creation
+
+### Dev Integration Branch Setup
+1. **Base Branch**: Use `master` or `main` as base (typically latest stable)
+2. **Branch Name**: `develop` for staging/integration
+3. **Create**: `git checkout -b develop origin/master`
+
+### Merging Ready Branches
+Process ready feature/fix branches in dependency order:
+```bash
+# For each ready branch in sequence:
+git merge origin/fix/[branch-name] -m "Merge [branch-name] into develop"
+```
+
+**Ready Branch Criteria**:
+- Commit history is clean and meaningful
+- All commits are documented with clear messages
+- Local testing has passed
+- No outstanding review comments
+
+### Post-Merge Validation
+1. **Local Build**: `npm run build` or equivalent
+2. **Check for Warnings**: Address chunk size or compilation warnings
+3. **Test Execution**: Run test suite to verify integration integrity
+4. **Documentation**: Update branch integration summary
+
+---
+
+## Firebase Deployment Workflow
+
+### Pre-Deployment Checks
+1. **Firebase Projects**: Verify projects via `firebase projects:list`
+2. **Aliases**: Confirm correct mappings in `.firebaserc`
+   - Default: `collab-canvas-dev`
+   - Prod alias: `collab-canvas-ed2fc`
+3. **Environment Variables**: Validate all `VITE_FIREBASE_*` keys exist in `.env.development` and `.env.production`
+
+### Build & Deploy Strategy
+
+**For Development**:
+```bash
+npm run build:dev      # Uses .env.development
+npm run firebase:deploy:dev  # Deploys to collab-canvas-dev project
+```
+
+**For Production**:
+```bash
+npm run build          # Uses .env.production (default)
+npm run firebase:deploy:prod # Deploys to collab-canvas-ed2fc project
+```
+
+### Deployment Verification
+1. **Build Output**: Confirm successful compilation and asset generation
+2. **Hosting URL**: Note the live URL (e.g., `https://collab-canvas-dev.web.app`)
+3. **Preview Channel**: Verify preview channel URL for develop branch (expires 7 days)
+4. **Site Configuration**: Confirm correct hosting site is receiving the deploy
+
+---
+
+## Integration Summary Documentation
+
+### 1-Page Summary Template
+After integration is complete, generate a concise summary to `docs/INTEGRATION_SUMMARY.md`:
+
+**Contents**:
+- **Branches Merged**: List each branch with commit count
+- **Key Changes**: High-level summary of what changed (performance, features, fixes)
+- **Build Status**: Compilation result, any warnings, resolution steps
+- **Deployment**: Environment deployed to, hosting URL, preview channel
+- **Testing Notes**: Any integration issues encountered and resolution
+- **Next Steps**: Recommended follow-up actions or open items
+
+**Tone**: Clear, scannable, actionable for stakeholders
+
+---
+
+## Documentation Standards
+
+### Commit Messages
+- **Format**: `[type]: [description]`
+- **Types**: feat, fix, docs, perf, refactor, test, chore
+- **Example**: `docs: Complete session documentation for AuthContext optimization work`
+- **Body**: Include context on *why* the change was made, not just what changed
+
+### File-Level Documentation
+- Complex logic requires inline comments explaining non-obvious decisions
+- New functions include JSDoc comments with parameter types and return values
+- Large PRs include a `NOTES.md` file documenting architecture decisions
+
+### Progress Tracking
+- Update task lists as work progresses (check off completed subtasks)
+- Log blockers or deviations in a deviation note with justification
+- Reference task files in commit messages: `Completes tasks-[feature]-pr-[N].md subtask 3`
+
+---
+
+## Common Patterns
+
+### When to Create a New Integration Branch
+- After multiple fixes have stabilized
+- Before a release cycle
+- To validate that multiple features work together
+- When preparing for deployment to production
+
+### When to Preserve Commit History
+- Always preserve when merging feature/fix branches into integration branch
+- Allows future blame/log analysis to trace decisions
+- Maintains author attribution and timestamps
+- Enables bisecting to find root cause of issues
+
+### When to Create Multiple Task Files
+- A single feature may require 2–6 PRs
+- Each PR has its own task file: `tasks-feature-pr-1.md`, `tasks-feature-pr-2.md`, etc.
+- Allows parallel work tracking and clearer scope per PR
+- Prevents task lists from becoming unwieldy (4–6 subtasks per PR)
+
+---
+
+## Quick Reference Checklist
+
+- [ ] Read Memory Bank core files and align on architecture
+- [ ] Audit git branches and sync with remote
+- [ ] Stash local changes before any checkout
+- [ ] Create integration branch from correct base
+- [ ] Merge ready branches with preserved commit history
+- [ ] Run local build and verify compilation
+- [ ] Address any build warnings or test failures
+- [ ] Generate 1-page integration summary
+- [ ] Push integration branch to remote
+- [ ] Validate deployment (URL, preview channel, environment)
+- [ ] Update task tracking with completion status
+- [ ] Document any deviations or blockers
+
+---
+
+## When This Rule Does NOT Apply
+
+- Simple bug fixes that don't require branch integration
+- Documentation-only changes that don't affect code
+- Hotfixes deployed directly to production (follow separate emergency process)
+- Local experimentation branches that won't be merged upstream
+
+---
+
+**Last Updated**: 2025-10-18
+**Apply To**: All development workflows, branch reviews, and deployment operations
+
+---
+
+## cursor_flow Integration
+
+When orchestrating development workflows with explicit time/depth constraints, adopt `cursor_flow` parameters if provided. If absent, defaults apply based on task type (see `cursor-flow.mdc`).
+
+Guidelines:
+- Echo the active envelope once, then enforce it across search, edits, build/test, and docs.
+- Prefer parallel read-only investigations within `maxParallelAttempts`; sequence edits.
+- Honor `stepTimeoutSeconds` for builds/tests; checkpoint per `checkpointFrequencyMinutes`.
