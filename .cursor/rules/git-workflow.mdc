@@ -1,0 +1,127 @@
+---
+alwaysApply: false
+---
+
+# Rule: Git Workflow for PR Development
+
+## Purpose
+
+Maintain clean version control history during PR development while enabling autonomous work with appropriate human oversight.
+
+## Trigger Conditions
+
+This rule applies when:
+- Working with files matching `docs/tasks/**/tasks-*.md` or `docs/**/tasks-*.md`
+- Starting work on a new pull request task list
+- Any task list file is opened or referenced in the conversation
+
+## Initial Setup
+
+When starting work on a PR task list:
+
+1. **Check current branch**: `git branch`
+2. **Create feature branch if needed**: Use pattern `feature/[pr-name]`
+3. **Verify branch**: Confirm you're on the correct branch
+4. **Proceed with implementation**
+
+## Feature Branch Naming Convention
+
+Use the pattern: `feature/[pr-name]`
+
+Examples:
+- `feature/auth-presence-pr-1`
+- `feature/canvas-core-pr-2`
+- `feature/persistence-pr-3`
+
+## Standard Workflow
+
+### Feature Branch Creation
+When beginning a new PR:
+```bash
+git checkout -b feature/[pr-name]
+git branch  # verify
+```
+
+### Feature Branch Commit
+After completing PR work:
+```bash
+git add .
+git commit -m "feat: [descriptive commit message]"
+```
+
+### Merge to Develop
+After feature branch commit:
+```bash
+git checkout develop
+git merge feature/[pr-name]
+git branch -d feature/[pr-name]  # cleanup
+```
+
+### Push to Remote
+After merging to local develop:
+```bash
+git push origin develop
+```
+
+### Merge to Main (When Appropriate)
+For stable, tested changes ready for production:
+```bash
+git checkout main
+git pull origin main
+git merge develop
+git push origin main
+```
+
+## Autonomous Operation Guidelines
+
+**Default behavior**: Execute standard workflow steps autonomously for routine PR work.
+
+**Require human confirmation** only for:
+- Pushing to remote develop/main (confirm once at end of session)
+- Merging to main branch (assess stability and get approval)
+- Non-standard operations (force pushes, branch deletions beyond feature branches)
+- Situations where merge conflicts are detected
+
+**Proceed without asking** for:
+- Creating feature branches
+- Committing to feature branches
+- Merging feature branches to local develop
+- Deleting feature branches after successful merge
+
+## Decision Framework
+
+Use judgment to determine when human oversight is needed:
+
+- **Low risk**: Branch creation, feature commits, local merges → Proceed autonomously
+- **Medium risk**: Pushing to remote develop → Notify and proceed, or batch with other changes
+- **High risk**: Merging to main, unusual operations → Request explicit approval
+
+## Error Handling
+
+If issues arise (merge conflicts, failed pushes):
+- Report the issue clearly
+- Suggest resolution options
+- Request human decision on how to proceed
+
+## Benefits
+
+- Enables efficient autonomous development
+- Maintains clean git history
+- Provides appropriate guardrails for risky operations
+- Reduces unnecessary interruptions while preserving human control where it matters
+
+## Integration with Other Rules
+
+This rule works with:
+- **commit-separation**: Ensures git operations are separate from development work
+- **process-task-list**: Provides git workflow for task list management
+- **modern-react-nextjs**: Maintains clean development practices
+
+---
+
+## cursor_flow Integration
+
+When `cursor_flow` is active:
+- Stage and commit in small, logically grouped edits aligned to checkpoint cadence
+- Avoid long-running merges near budget end; prefer pushing WIP with clear notes
+- If `riskPolicy` is conservative, defer branch deletions and main merges until next session

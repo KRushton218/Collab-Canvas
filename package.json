@@ -20,7 +20,10 @@
     "firebase:channel:dev": "npm run build:dev && firebase hosting:channel:deploy $(git branch --show-current) --only hosting --project collab-canvas-dev",
     "firebase:channels:list:prod": "firebase hosting:channel:list --project collab-canvas-ed2fc",
     "firebase:channels:list:dev": "firebase hosting:channel:list --project collab-canvas-dev",
-    "firebase:use": "firebase use --add"
+    "firebase:use": "firebase use --add",
+    "swarm:launch": "tsx scripts/launch-canvas-swarm.ts",
+    "swarm:evaluate": "tsx scripts/evaluate-canvas-approaches.ts",
+    "swarm:deploy": "tsx scripts/deploy-winner.ts"
   },
   "dependencies": {
     "firebase": "^12.4.0",
@@ -51,6 +54,7 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.14",
     "vite": "^7.1.7",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "tsx": "^4.19.2"
   }
 }

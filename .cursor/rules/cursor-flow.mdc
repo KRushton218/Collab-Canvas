@@ -1,0 +1,115 @@
+---
+description: Orchestrates reasoning depth, time budgets, and parallel attempts for tasks
+alwaysApply: false
+---
+
+# Rule: cursor_flow Orchestrator
+
+**Purpose**: Provide a consistent way to specify task type, total time budget, reasoning depth, and parallel attempts for autonomous work. Prevents truncation by making the orchestrator explicitly control depth vs. time tradeoffs.
+
+---
+
+## Trigger Conditions
+
+This rule applies when any of the following are present in the conversation:
+- The user specifies a top-level task type (e.g., "feature" or "fix") and/or a time budget
+- The user mentions "cursor_flow", "time budget", "reasoning depth", or "parallel attempts"
+- The agent decides a default budget should be applied to avoid unbounded work
+
+---
+
+## Parameters (Task Envelope)
+
+Use the following envelope to declare orchestration constraints at the start of a task:
+
+```yaml
+cursor_flow:
+  taskType: fix | feature | docs | perf | chore
+  timeBudgetMinutes: <integer>         # total wall-clock budget for the session
+  reasoningDepth: shallow | standard | deep
+  maxParallelAttempts: <integer>       # N; number of parallel attempts with consistent depth
+  stepTimeoutSeconds: <integer>        # per-step cap for long ops (search/build/test)
+  checkpointFrequencyMinutes: <integer># how often to checkpoint/propose/commit
+  riskPolicy: conservative | balanced | aggressive
+  notes: <string>                      # optional context or constraints
+```
+
+If some fields are omitted, apply defaults (below). The agent should echo the active envelope in a brief status update and then enforce it.
+
+---
+
+## Defaults
+
+- taskType: fix → default timeBudgetMinutes: 20, reasoningDepth: standard, maxParallelAttempts: 1, stepTimeoutSeconds: 120, checkpointFrequencyMinutes: 5, riskPolicy: conservative
+- taskType: feature → default timeBudgetMinutes: 40, reasoningDepth: standard, maxParallelAttempts: 1, stepTimeoutSeconds: 180, checkpointFrequencyMinutes: 10, riskPolicy: balanced
+- taskType: perf → default timeBudgetMinutes: 40, reasoningDepth: deep, maxParallelAttempts: 2, stepTimeoutSeconds: 240, checkpointFrequencyMinutes: 10, riskPolicy: balanced
+- taskType: docs/chore → default timeBudgetMinutes: 15, reasoningDepth: shallow, maxParallelAttempts: 1, stepTimeoutSeconds: 90, checkpointFrequencyMinutes: 10, riskPolicy: conservative
+
+If both `timeBudgetMinutes` and `reasoningDepth` are provided, depth wins for analysis breadth, while the agent enforces time via earlier checkpointing and truncation of optional steps.
+
+---
+
+## Execution Policy
+
+1. Adopt the envelope immediately; start a countdown timer for the total budget.
+2. Break work into small, check-pointed steps; surface quick status updates at each checkpoint with remaining budget.
+3. Prefer parallel, read-only operations within `maxParallelAttempts` using safe, isolated steps; avoid conflicting edits in parallel.
+4. Enforce `stepTimeoutSeconds` for long-running operations (search/build/test). If exceeded, abort the step, summarize partial findings, and propose fallback.
+5. If riskPolicy is conservative, avoid invasive edits late in the budget; if aggressive, allow larger edits earlier with explicit commit messages.
+6. If runway < checkpointFrequencyMinutes, skip optional steps and aim to reach a safe stopping point (commit or revert).
+7. Never exceed the total `timeBudgetMinutes`; when 2 minutes remain, present a final consolidation option: stop, extend, or suggest next steps.
+
+---
+
+## Parallel Attempts Guidance (N)
+
+- Use N>1 only for analysis or exploration that can be safely parallelized (e.g., variant searches, hypothesis checks). Do not run parallel conflicting edits.
+- Ensure consistent reasoning depth across attempts; reconcile results quickly and choose the best path within budget.
+- If any parallel attempt breaches `stepTimeoutSeconds`, cancel remaining attempts and consolidate findings.
+
+---
+
+## Integration with Existing Rules
+
+- Works alongside `development-workflow-and-code-review`, `development-workflow`, `bugfix-workflow`, and `git-workflow`.
+- When cursor_flow is active, those rules should inherit the time and depth guardrails, especially around build, deploy, and documentation steps.
+
+---
+
+## Examples
+
+### Example 1: Quick bug fix
+```yaml
+cursor_flow:
+  taskType: fix
+  timeBudgetMinutes: 20
+  reasoningDepth: standard
+  maxParallelAttempts: 1
+```
+
+### Example 2: Feature research with redundancy
+```yaml
+cursor_flow:
+  taskType: feature
+  timeBudgetMinutes: 40
+  reasoningDepth: deep
+  maxParallelAttempts: 2
+  stepTimeoutSeconds: 180
+  checkpointFrequencyMinutes: 10
+  riskPolicy: balanced
+```
+
+---
+
+## Agent Obligations
+
+- Echo the active envelope once, then enforce it without repeated verbosity.
+- Track elapsed time and remaining budget in brief status updates.
+- Use smaller, reversible edits when budget is tight.
+- If budget ends with work unfinished, provide a crisp continuation plan and exact next commands/edits to resume.
+
+---
+
+**Last Updated**: 2025-10-18
+**Applies To**: Any autonomous development session where explicit time/depth control is desired
+
