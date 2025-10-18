@@ -1,5 +1,7 @@
 Description: Bug fix workflow and deployment process
 
+@branch-echo.mdc
+
 ## Bug Fix Workflow
 
 When completing a bug fix, follow this standardized process:
