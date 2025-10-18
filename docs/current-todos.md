@@ -1,213 +1,230 @@
-# Current Development Tasks
+# Current TODOs - October 18, 2025
 
-> **Active Work Items for CollabCanvas**  
-> **Last Updated**: October 14, 2025  
-> **Status**: Core MVP complete, working on shape type extensions
+## Priority Matrix
 
-For overall project status and completed features, see `memory-bank/progress.md`.
+### P0: Critical (Blocking/Broken)
+None known! ✨
 
----
+### P1: High Priority (Major Features, Performance)
 
-## 🎯 High Priority Tasks
+#### 1. Copy/Paste & Duplicate Shapes
+- Status: **READY TO IMPLEMENT** ✅
+- Impact: Major UX improvement
+- Technical: Uses batch operations already built
+- Tasks:
+  - [x] Batch create infrastructure exists
+  - [ ] Keyboard shortcuts (Ctrl/Cmd+C, Ctrl/Cmd+V, Ctrl/Cmd+D)
+  - [ ] Clipboard management (in-memory storage)
+  - [ ] Offset pasting (don't paste directly on top)
+  - [ ] Notification on successful paste
+  - [ ] Test with multi-selection
 
-### 1. Implement Additional Shape Types
-**Goal**: Add Circle, Line, and Text shape rendering support
+#### 2. Undo/Redo System
+- Status: **Architecture needed**
+- Impact: Professional app feature
+- Technical: Track all actions in history stack
+- Tasks:
+  - [ ] Define action history schema
+  - [ ] Implement action recording (create, delete, move, etc.)
+  - [ ] Stack management with memory limits
+  - [ ] UI: Keyboard shortcuts + buttons
+  - [ ] Test with multi-user scenarios (tricky!)
 
-**Current State**:
-- ✅ UI toolbar has buttons for all shape types
-- ✅ Backend creates shapes with `type` field
-- ❌ Canvas only renders Rectangle shapes (needs Circle/Line/Text components)
+#### 3. Arrow Keys for Shape Movement
+- Status: **PARTIALLY DONE** (only supports multi-selection)
+- Impact: Improved precision editing
+- Technical: Already implemented for multi-drag
+- Tasks:
+  - [ ] Verify single shape movement works
+  - [ ] Add configurable move distance (1px, 5px, 10px)
+  - [ ] Document keyboard shortcuts in help overlay
+  - [ ] Test with rotated shapes (movement direction)
 
-**Tasks**:
-- [ ] **1.1: Add Circle Shape Rendering**
-  - File: `src/components/Canvas/Canvas.jsx`
-  - Add conditional in `shapes.map()` to render `<Circle>` from react-konva
-  - Props: `x`, `y`, `radius` (calculate from width/height)
-  - Test: Create circle via toolbar → renders correctly
+### P2: Medium Priority (Polish, Quality of Life)
 
-- [ ] **1.2: Add Line/Arrow Shape Rendering**
-  - File: `src/components/Canvas/Canvas.jsx`
-  - Add conditional for type === 'line'
-  - Render `<Arrow>` or `<Line>` from react-konva
-  - Props: `points` array [x1, y1, x2, y2]
-  - Handle transform for line endpoints
-  - Test: Create line via toolbar → renders correctly
+#### 1. Shape Type Validation
+- Status: **NEEDED**
+- Impact: Data consistency
+- Tasks:
+  - [ ] Validate shape types on creation
+  - [ ] Prevent invalid type storage
+  - [ ] Migration for any existing invalid data
 
-- [ ] **1.3: Add Text Shape Rendering**
-  - File: `src/components/Canvas/Canvas.jsx`
-  - Add conditional for type === 'text'
-  - Render `<Text>` from react-konva
-  - Props: `x`, `y`, `text`, `fontSize`, `width`
-  - Handle text editing on double-click (future enhancement)
-  - Test: Create text via toolbar → renders correctly
+#### 2. Stroke/Border Options
+- Status: **UI needed**
+- Impact: More shape customization
+- Tasks:
+  - [ ] Add stroke width control to StylePanel
+  - [ ] Add stroke color picker
+  - [ ] Stroke style (solid, dashed, dotted)
+  - [ ] Preview in canvas
 
-- [ ] **1.4: Update Shape Creation Defaults**
-  - File: `src/contexts/CanvasContext.jsx` or `src/components/Canvas/CanvasToolbar.jsx`
-  - Define appropriate default dimensions for each type:
-    - Circle: radius based on DEFAULT_SHAPE_SIZE
-    - Line: default length and direction
-    - Text: default text, fontSize, width
-  - Test: Each tool creates shape with sensible defaults
+#### 3. Font Family Selector
+- Status: **UI needed**
+- Impact: Text formatting completeness
+- Tasks:
+  - [ ] Add font family dropdown to StylePanel
+  - [ ] Support web-safe fonts (Arial, Helvetica, etc.)
+  - [ ] Persist font family to Firestore
+  - [ ] Sync via RTDB for live editing
 
-- [ ] **1.5: Add Shape Type Validation**
-  - File: `src/services/shapes.js`
-  - Validate shape type on creation
-  - Ensure all required fields for each type exist
-  - Test: Invalid shape types rejected gracefully
+#### 4. Advanced Text Features
+- Status: **Future**
+- Impact: Rich text support
+- Tasks:
+  - [ ] Multi-line text with mixed formatting
+  - [ ] Rich text editor (optional dependency)
+  - [ ] Export to formatted text
 
-**Dependencies**: None - can start immediately
+#### 5. Visual Improvements
+- Status: **READY FOR POLISH**
+- Tasks:
+  - [ ] Keyboard shortcuts help overlay (press '?' key)
+  - [ ] Loading states for slow networks
+  - [ ] Error boundaries for resilience
+  - [ ] Better empty canvas experience
 
-**Estimated Effort**: 4-6 hours
+### P3: Lower Priority (Future Releases)
 
-**Success Criteria**:
-- All four shape types (Rectangle, Circle, Line, Text) render correctly
-- Shapes can be dragged, resized, and deleted regardless of type
-- Locking works for all shape types
-- Real-time sync works for all shape types
-- Manual testing with multiple users successful
+#### 1. Group Shapes (Logical)
+- Status: **Architecture exists (SelectionGroup)**
+- Impact: Better organization for complex canvases
+- Tasks:
+  - [ ] Persist grouping to Firestore
+  - [ ] Visual group indicators
+  - [ ] Group operations (move, delete, lock)
 
----
+#### 2. Layers/Z-Index Control
+- Status: **Basic implementation exists** (bring-to-front/send-to-back)
+- Impact: Better shape management
+- Tasks:
+  - [ ] Add layers panel
+  - [ ] Show all shapes with visual hierarchy
+  - [ ] Direct layer reordering UI
+  - [ ] Layer names/labels
 
-## 🔧 Medium Priority Enhancements
+#### 3. Canvas Export
+- Status: **Not started**
+- Impact: Share work outside CollabCanvas
+- Tasks:
+  - [ ] Export as PNG (canvas snapshot)
+  - [ ] Export as SVG (vector)
+  - [ ] Export as JSON (data backup)
 
-### 2. Improve Tool Mode Interaction
-**Goal**: Stay in tool mode after creating a shape (don't auto-switch back to Select)
+#### 4. Freehand Drawing
+- Status: **Not started**
+- Impact: More flexible creation
+- Tasks:
+  - [ ] Draw tool using Konva Line
+  - [ ] Pressure sensitivity (if mouse supports)
+  - [ ] Stroke smoothing
+  - [ ] Performance optimization for long strokes
 
-**Current Behavior**:
-- Click Rectangle → shape appears → tool switches back to Select
-- User must click Rectangle again for each new shape
+#### 5. Mobile Optimization
+- Status: **Not started**
+- Impact: Wider audience
+- Tasks:
+  - [ ] Touch gesture support (pinch zoom, two-finger pan)
+  - [ ] Responsive UI layout
+  - [ ] Mobile-friendly toolbar
+  - [ ] Test on iOS/Android
 
-**Desired Behavior**:
-- Click Rectangle → stays in Rectangle mode
-- Each click on canvas creates a new rectangle at that position
-- Press Escape or click Select to exit tool mode
+#### 6. Collaboration Features
+- Status: **Core features done, nice-to-haves remain**
+- Tasks:
+  - [ ] Comments on shapes
+  - [ ] Chat/messaging
+  - [ ] Activity history/timeline
+  - [ ] User permissions (owner/editor/viewer)
+  - [ ] Canvas sharing/invites
 
-**Tasks**:
-- [ ] **2.1: Add Tool Mode State**
-  - Track "draw mode" vs "select mode"
-  - Don't auto-switch back to Select after shape creation
-  
-- [ ] **2.2: Click-to-Create Interaction**
-  - When in tool mode (Rectangle/Circle/etc), click canvas to create shape at cursor
-  - Shape appears at click position instead of viewport center
+#### 7. Advanced Features
+- Status: **Future vision**
+- Tasks:
+  - [ ] Grid/snap-to-grid
+  - [ ] Ruler/guides
+  - [ ] Shape templates/library
+  - [ ] Multiple canvases per user (projects/workspaces)
 
-- [ ] **2.3: Escape to Exit Tool Mode**
-  - Add keyboard handler for Escape key
-  - Returns to Select mode from any tool mode
+## Quick Reference by Feature Area
 
-**Estimated Effort**: 2-3 hours
+### Canvas Core
+- [x] Panning and zooming
+- [x] Shape creation (rectangle, circle, line, text)
+- [x] Shape editing (move, resize, rotate)
+- [ ] Shape grouping (logical)
+- [ ] Layers panel
+- [ ] Grid/guides
 
----
+### Shape Editing
+- [x] Fill color
+- [ ] Stroke/border
+- [x] Rotation
+- [x] Font size & family (size done, family pending)
+- [x] Text alignment & formatting
+- [x] Multi-selection transform
 
-### 3. Shape Property Panel
-**Goal**: Edit shape properties after creation (color, size, etc.)
+### Collaboration
+- [x] Real-time cursor tracking
+- [x] User presence
+- [x] Shape locking
+- [x] Idle detection
+- [ ] Comments
+- [ ] Chat
+- [ ] User permissions
 
-**Tasks**:
-- [ ] **3.1: Create PropertyPanel Component**
-  - Show when shape is selected
-  - Display: Fill color, Width, Height, X/Y position
-  - Allow editing via inputs
+### Operations
+- [ ] Copy/Paste
+- [ ] Duplicate
+- [ ] Undo/Redo
+- [x] Delete
+- [x] Bring to Front/Send to Back
+- [ ] Group operations
 
-- [ ] **3.2: Integrate with CanvasContext**
-  - Update shape properties in real-time
-  - Sync changes to Firebase
-  - Lock shape during property edits
+### Advanced
+- [ ] Freehand drawing
+- [ ] Canvas export
+- [ ] Mobile optimization
+- [ ] Multiple canvases
 
-**Estimated Effort**: 3-4 hours
+## Known Limitations
 
----
+1. **Mobile**: Not optimized for touch/mobile
+2. **Scale**: Performance with 1000+ shapes (ready to test)
+3. **Concurrent Users**: Tested with 5-10, higher load untested
+4. **Text Wrapping**: Basic (Konva default), no custom wrapping modes
+5. **Performance**: Large operations (>500 shapes) may still need optimization
 
-## 📋 Low Priority / Future Work
+## Completed in V1.0
 
-### 4. Mobile Responsiveness
-- Touch gesture support for pan/zoom
-- Mobile-friendly toolbar layout
-- Virtual keyboard handling for text input
+✅ Basic shape creation and editing
+✅ Real-time collaboration
+✅ User presence & cursors
+✅ Shape locking & conflict prevention
+✅ Text editing with formatting
+✅ Multi-selection transform
+✅ Batch operations (paste, duplicate ready)
+✅ Performance optimizations (viewport culling, shared heartbeat)
+✅ Idle detection & session cleanup
+✅ Optimistic UI & locking
 
-### 5. Additional Features (Phase 2)
-- Freehand drawing tool
-- Undo/redo system
-- Canvas export (PNG/SVG)
-- Comments and annotations
-- User permissions (viewer/editor roles)
-- Multiple canvas projects
+## Next Milestone: V1.1.0
 
----
+**Focus**: Copy/Paste, Undo/Redo, Polish
 
-## 🐛 Known Issues
+1. ✅ Copy/Paste shapes (keyboard shortcuts)
+2. ✅ Duplicate shapes (Ctrl/Cmd+D)
+3. ✅ Undo/Redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z)
+4. ✅ Shape type validation
+5. ✅ Keyboard shortcuts help overlay
+6. ✅ Font family selector
+7. ✅ Stroke/border customization
 
-### Active Bugs
+## Development Notes
 
-#### 1. Lock Border Persistence (Medium Priority) 🐛
-**Discovered**: October 14, 2025  
-**Symptom**: When dragging multiple shapes in rapid sequence, lock borders persist on all previously dragged shapes  
-**Expected**: Only the currently locked shape should show lock border  
-**Reproduction**:
-1. Create multiple rectangles
-2. Quickly drag one shape, release
-3. Immediately drag another shape
-4. Observe: Previous shape still has lock border
-
-**Impact**: Visual clutter, confusing lock state indication (doesn't affect functionality)  
-**Location**: `Canvas.jsx` - `editingShapes` state management, line ~45  
-**Root Cause**: `editingShapes` Set not being cleared when drag ends  
-**Priority**: Medium - Visual bug, doesn't block functionality  
-**Target Fix**: V1.1.0
-
-### Limitations
-1. **Shape Type Rendering**: Only rectangles render (in progress above)
-2. **Mobile**: Desktop-only, no touch optimization
-3. **Performance**: Untested with 1000+ shapes
-4. **Text Editing**: No double-click to edit text content yet
-
----
-
-## 📊 Testing Status
-
-**Current Coverage**:
-- Unit Tests: 62/62 passing ✅
-  - Auth: 8 tests
-  - Presence: 12 tests
-  - Canvas/Helpers: 42 tests
-- Integration Tests: Manual testing approach ✅
-- E2E Tests: Not implemented (deferred)
-
-**Testing Strategy**: See `testing-strategy.md` for details and user story test suite.
-
----
-
-## 🚀 Deployment Status
-
-**Current State**: 
-- Development: Running locally
-- Production: Not yet deployed
-- Firebase Hosting: Configured but not deployed
-
-**Next Steps for Deployment** (PR #9 from tasks.md):
-- [ ] Run final test suite
-- [ ] Build production bundle
-- [ ] Deploy to Firebase Hosting
-- [ ] Configure Firestore/RTDB security rules for production
-- [ ] Test with 5+ concurrent users
-
----
-
-## 📝 Notes
-
-**Development Approach**:
-- Manual testing preferred for visual/interactive features
-- Unit tests for service layer and utilities
-- Integration tests deferred due to complexity of mocking Firebase
-
-**Architecture Decisions**:
-- O(1) shape operations (one doc per shape)
-- RTDB for temporary data (cursors, active edits, locks)
-- Firestore for persistent data (committed shapes)
-- Throttled updates (150ms) to prevent rate limiting
-
-**Design System**:
-- Primary color: Indigo (#6366f1)
-- Border radius: 12px (containers), 8px (buttons)
-- Consistent hover/active states
-- Responsive to zoom level (stroke widths, icons)
+- All infrastructure for batch operations is ready
+- SelectionGroup model enables future grouped operations
+- Deployment channels ready for safe feature testing
+- Firebase has 2 projects (prod + dev) for isolated testing
+- Performance tested with 641 shapes - no freezing
 
