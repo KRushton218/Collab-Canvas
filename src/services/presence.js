@@ -180,13 +180,35 @@ export const sendHeartbeat = async (userId) => {
   if (!userId) return;
 
   const userPresenceRef = ref(rtdb, `sessions/${CANVAS_ID}/${userId}`);
-  
+
   try {
     await update(userPresenceRef, {
       lastSeen: serverTimestamp(),
     });
   } catch (error) {
     console.error('Error sending heartbeat:', error);
+  }
+};
+
+/**
+ * Update cursor color for a user
+ * @param {string} userId - User ID
+ * @param {string} color - New cursor color (hex)
+ */
+export const updateCursorColor = async (userId, color) => {
+  if (!userId || !color) return;
+
+  const userPresenceRef = ref(rtdb, `sessions/${CANVAS_ID}/${userId}`);
+
+  try {
+    await update(userPresenceRef, {
+      cursorColor: color,
+      lastSeen: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error('Error updating cursor color:', error);
+    return false;
   }
 };
 

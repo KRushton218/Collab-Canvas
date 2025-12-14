@@ -33,7 +33,7 @@ const AppContent = () => {
 // Authenticated App Content (only rendered when user is logged in)
 const AuthenticatedApp = ({ currentUser, showPresence, setShowPresence, showReconnectModal, setShowReconnectModal }) => {
   // Initialize presence ONLY after authentication
-  const { onlineUsers, isStale, sessionStart } = usePresence(currentUser.uid, currentUser.displayName);
+  const { onlineUsers, isStale, currentColor, changeCursorColor } = usePresence(currentUser.uid, currentUser.displayName);
 
   // Check for stale session and show modal on any interaction
   useEffect(() => {
@@ -55,9 +55,8 @@ const AuthenticatedApp = ({ currentUser, showPresence, setShowPresence, showReco
     };
   }, [isStale, setShowReconnectModal]);
 
-  // Find current user's color from the online users list
-  const currentUserData = onlineUsers.find(u => u.userId === currentUser.uid);
-  const currentUserColor = currentUserData?.cursorColor || '#000000';
+  // Use the current color from presence hook (which respects user's selection)
+  const currentUserColor = currentColor || '#000000';
 
   // Count only non-idle users as "active"
   const activeUsersCount = onlineUsers.filter(u => !u.isIdle).length;
@@ -84,14 +83,19 @@ const AuthenticatedApp = ({ currentUser, showPresence, setShowPresence, showReco
       
       {/* Presence Roster - dropdown from navbar, only shown when toggled */}
       {showPresence && (
-        <div style={{ 
-          position: 'absolute', 
-          top: '60px', 
-          right: '16px', 
+        <div style={{
+          position: 'absolute',
+          top: '60px',
+          right: '16px',
           zIndex: 999,
           animation: 'slideDown 0.2s ease-out',
         }}>
-          <PresenceList users={onlineUsers} currentUserId={currentUser.uid} />
+          <PresenceList
+            users={onlineUsers}
+            currentUserId={currentUser.uid}
+            currentColor={currentColor}
+            onColorChange={changeCursorColor}
+          />
         </div>
       )}
       
